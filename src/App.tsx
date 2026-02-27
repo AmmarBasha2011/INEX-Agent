@@ -5,7 +5,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { Send, Menu, Plus, MessageSquare, X, Activity, Clock, Coins, ChevronDown, Bot, Zap, Timer, Copy, Download, Brain, Flame, Rocket, Sparkles, Check, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Send, Menu, Plus, MessageSquare, X, Activity, Clock, Coins, ChevronDown, Bot, Zap, Timer, Copy, Download, Brain, Flame, Rocket, Sparkles, Check, RefreshCw, AlertTriangle, CheckCheck, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 
@@ -20,6 +20,8 @@ const AI_LEVELS = [
   { id: 'new', name: 'New', model: 'gemini-3.1-pro-preview', inPrice: 1.25, outPrice: 5.00, icon: Sparkles, color: 'text-emerald-400', desc: 'Latest experimental model' },
 ];
 
+type MessageStatus = 'sending' | 'sent' | 'processing' | 'done' | 'error';
+
 type Message = {
   id: string;
   role: 'user' | 'model';
@@ -28,7 +30,7 @@ type Message = {
   tokens?: { prompt: number; candidates: number; total: number };
   cost?: number;
   duration?: number; // in milliseconds
-  isError?: boolean;
+  status: MessageStatus;
 };
 
 type Conversation = {
@@ -138,7 +140,7 @@ export default function App() {
   const runAI = async (convId: string, history: Message[]) => {
     setIsLoading(true);
     const modelMessageId = `model-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const emptyModelMessage: Message = { id: modelMessageId, role: 'model', text: '', timestamp: Date.now() };
+    const emptyModelMessage: Message = { id: modelMessageId, role: 'model', text: '', timestamp: Date.now(), status: 'processing' };
 
     setConversations(prev => prev.map(c => c.id === convId ? {
       ...c,
@@ -187,6 +189,7 @@ export default function App() {
               messages: c.messages.map(m => m.id === modelMessageId ? { 
                 ...m, 
                 text: currentText,
+                status: 'processing'
               } : m)
             };
           }
@@ -220,6 +223,7 @@ export default function App() {
               tokens: { prompt: pTokens, candidates: cTokens, total: totalTokens },
               cost: cost,
               duration: duration,
+              status: 'done'
             } : m)
           };
         }
@@ -235,7 +239,7 @@ export default function App() {
             messages: c.messages.map(m => m.id === modelMessageId ? { 
               ...m, 
               text: 'An error occurred while generating the response. Please try again or select a different model.',
-              isError: true
+              status: 'error'
             } : m)
           };
         }
@@ -251,7 +255,8 @@ export default function App() {
 
     const userText = input.trim();
     const timestamp = Date.now();
-    const userMessage: Message = { id: `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, role: 'user', text: userText, timestamp };
+    const userMessageId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const userMessage: Message = { id: userMessageId, role: 'user', text: userText, timestamp, status: 'sending' };
 
     let currentConv = conversations.find(c => c.id === activeId);
     if (!currentConv) return;
@@ -269,6 +274,15 @@ export default function App() {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
+
+    // Simulate network delay for user message 'sent' status
+    setTimeout(() => {
+      setConversations(prev => prev.map(c => c.id === activeId ? {
+        ...c,
+        messages: c.messages.map(m => m.id === userMessageId ? { ...m, status: 'sent' } : m)
+      } : c));
+    }, 300);
+
     await runAI(activeId, updatedMessages);
   };
 
@@ -301,6 +315,19 @@ export default function App() {
 
   const formatTime = (ts: number) => {
     return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const StatusIcon = ({ status, role }: { status: MessageStatus, role: 'user' | 'model' }) => {
+    if (role === 'user') {
+      if (status === 'sending') return <Clock className="w-3 h-3 text-blue-300" />;
+      if (status === 'sent') return <CheckCheck className="w-3.5 h-3.5 text-blue-300" />;
+      return null;
+    } else {
+      if (status === 'processing') return <Loader2 className="w-3 h-3 text-blue-400 animate-spin" />;
+      if (status === 'error') return <AlertTriangle className="w-3 h-3 text-red-400" />;
+      if (status === 'done') return <CheckCheck className="w-3.5 h-3.5 text-emerald-500" />;
+      return null;
+    }
   };
 
   return (
@@ -450,7 +477,7 @@ export default function App() {
                     className={`max-w-[85%] md:max-w-[75%] px-4 py-3 rounded-2xl ${
                       msg.role === 'user'
                         ? 'bg-blue-600 text-white rounded-br-sm'
-                        : msg.isError 
+                        : msg.status === 'error' 
                           ? 'bg-red-950/30 text-red-200 rounded-bl-sm border border-red-900/50'
                           : 'bg-zinc-900 text-zinc-200 rounded-bl-sm'
                     }`}
@@ -461,7 +488,7 @@ export default function App() {
                           <>
                             <Markdown components={{ code: CodeBlock }}>{msg.text}</Markdown>
                             {/* Typewriter Cursor */}
-                            {isLoading && index === activeConversation.messages.length - 1 && !msg.isError && (
+                            {isLoading && index === activeConversation.messages.length - 1 && msg.status !== 'error' && (
                               <span className="typewriter-cursor" />
                             )}
                           </>
@@ -470,7 +497,7 @@ export default function App() {
                         )}
                         
                         {/* Regenerate Button for Errors */}
-                        {msg.isError && (
+                        {msg.status === 'error' && (
                           <div className="mt-4 flex items-center gap-2">
                             <AlertTriangle className="w-4 h-4 text-red-400" />
                             <button 
@@ -489,26 +516,32 @@ export default function App() {
                   </div>
                   
                   {/* Metadata & Actions Footer */}
-                  <div className={`flex flex-wrap items-center gap-3 mt-1.5 px-1 text-[11px] font-medium ${msg.role === 'user' ? 'text-zinc-500 flex-row-reverse' : 'text-zinc-500'}`}>
+                  <div className={`flex flex-wrap items-center gap-3 mt-1.5 px-1 text-[11px] font-medium ${msg.role === 'user' ? 'text-blue-300/80 flex-row-reverse' : 'text-zinc-500'}`}>
                     <span className="flex items-center gap-1"><Clock className="w-3 h-3 opacity-70" /> {formatTime(msg.timestamp)}</span>
                     
-                    {msg.duration !== undefined && !msg.isError && (
+                    {/* Status Indicator */}
+                    <span className="flex items-center gap-1">
+                      <StatusIcon status={msg.status} role={msg.role} />
+                      <span className="capitalize">{msg.status}</span>
+                    </span>
+
+                    {msg.duration !== undefined && msg.status !== 'error' && (
                       <span className="flex items-center gap-1 text-blue-400/80"><Timer className="w-3 h-3 opacity-70" /> {(msg.duration / 1000).toFixed(1)}s</span>
                     )}
                     
-                    {msg.tokens && !msg.isError && (
+                    {msg.tokens && msg.status !== 'error' && (
                       <span className="flex items-center gap-1"><Activity className="w-3 h-3 opacity-70" /> {msg.tokens.total} tkns</span>
                     )}
                     
-                    {msg.cost !== undefined && !msg.isError && (
+                    {msg.cost !== undefined && msg.status !== 'error' && (
                       <span className="flex items-center gap-1 text-emerald-500/80"><Coins className="w-3 h-3 opacity-70" /> ${msg.cost.toFixed(6)}</span>
                     )}
 
                     {/* Copy Button */}
-                    {!msg.isError && (
+                    {msg.status !== 'error' && (
                       <button 
                         onClick={() => handleCopyMessage(msg.id, msg.text)}
-                        className="flex items-center gap-1 hover:text-zinc-300 transition-colors active:scale-95 ml-1"
+                        className={`flex items-center gap-1 transition-colors active:scale-95 ml-1 ${msg.role === 'user' ? 'hover:text-white' : 'hover:text-zinc-300'}`}
                       >
                         {copiedId === msg.id ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
                         {copiedId === msg.id ? 'Copied' : 'Copy'}
