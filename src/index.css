@@ -9,8 +9,8 @@ html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
-  background-color: #020617; /* slate-950 */
-  color: #f8fafc; /* slate-50 */
+  background-color: #000000; /* Pure black for OLED */
+  color: #f4f4f5; /* zinc-100 */
 }
 
 /* Safe area padding for mobile devices */
@@ -18,26 +18,43 @@ html, body, #root {
   padding-bottom: env(safe-area-inset-bottom, 1rem);
 }
 
-/* Custom scrollbar for code blocks and chat */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0rem);
+}
+
+/* Custom scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #27272a; /* zinc-800 */
   border-radius: 10px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #3f3f46; /* zinc-700 */
 }
 
-/* Custom markdown styles for dark theme */
+textarea.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+textarea.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom markdown styles for pure dark theme */
+.markdown-body {
+  font-size: 15px;
+  line-height: 1.6;
+  word-break: break-word;
+}
 .markdown-body p {
-  margin-top: 0.5em;
-  margin-bottom: 0.5em;
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
 }
 .markdown-body p:first-child {
   margin-top: 0;
@@ -57,11 +74,44 @@ html, body, #root {
   margin-top: 0.5em;
   margin-bottom: 0.5em;
 }
+.markdown-body li {
+  margin-top: 0.25em;
+}
 .markdown-body a {
-  color: #60a5fa; /* blue-400 */
-  text-decoration: underline;
+  color: #3b82f6; /* blue-500 */
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+.markdown-body a:hover {
+  border-bottom-color: #3b82f6;
 }
 .markdown-body strong {
-  color: #f8fafc;
+  color: #ffffff;
   font-weight: 600;
+}
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
+  color: #ffffff;
+  font-weight: 600;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+.markdown-body h1 { font-size: 1.5em; }
+.markdown-body h2 { font-size: 1.25em; }
+.markdown-body h3 { font-size: 1.125em; }
+
+/* Typewriter cursor animation */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+.typewriter-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 1em;
+  background-color: #3b82f6;
+  vertical-align: middle;
+  margin-left: 4px;
+  animation: blink 1s step-end infinite;
+  border-radius: 2px;
 }
