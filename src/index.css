@@ -9,8 +9,8 @@ html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
-  background-color: #000000; /* Pure black for OLED */
-  color: #f4f4f5; /* zinc-100 */
+  background-color: #050505; /* Deep dark background */
+  color: #f4f4f5;
 }
 
 /* Safe area padding for mobile devices */
@@ -31,11 +31,11 @@ html, body, #root {
   background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #27272a; /* zinc-800 */
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 10px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #3f3f46; /* zinc-700 */
+  background: rgba(255, 255, 255, 0.2);
 }
 
 textarea.hide-scrollbar::-webkit-scrollbar {
@@ -46,7 +46,44 @@ textarea.hide-scrollbar {
   scrollbar-width: none;
 }
 
-/* Custom markdown styles for pure dark theme */
+/* Liquid Glass Styles */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+}
+
+.glass-panel-danger {
+  background: rgba(255, 20, 20, 0.05);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 50, 50, 0.2);
+  box-shadow: 0 8px 32px 0 rgba(255, 0, 0, 0.15);
+}
+
+/* Animated Background Blobs */
+@keyframes blob {
+  0% { transform: translate(0px, 0px) scale(1); }
+  33% { transform: translate(30px, -50px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.9); }
+  100% { transform: translate(0px, 0px) scale(1); }
+}
+
+.animate-blob {
+  animation: blob 15s infinite alternate ease-in-out;
+}
+
+.animation-delay-2000 {
+  animation-delay: 2s;
+}
+
+.animation-delay-4000 {
+  animation-delay: 4s;
+}
+
+/* Custom markdown styles */
 .markdown-body {
   font-size: 15px;
   line-height: 1.6;
@@ -78,13 +115,13 @@ textarea.hide-scrollbar {
   margin-top: 0.25em;
 }
 .markdown-body a {
-  color: #3b82f6; /* blue-500 */
+  color: #60a5fa;
   text-decoration: none;
   border-bottom: 1px solid transparent;
   transition: border-color 0.2s;
 }
 .markdown-body a:hover {
-  border-bottom-color: #3b82f6;
+  border-bottom-color: #60a5fa;
 }
 .markdown-body strong {
   color: #ffffff;
@@ -109,7 +146,7 @@ textarea.hide-scrollbar {
   display: inline-block;
   width: 8px;
   height: 1em;
-  background-color: #3b82f6;
+  background-color: currentColor;
   vertical-align: middle;
   margin-left: 4px;
   animation: blink 1s step-end infinite;
