@@ -1,0 +1,5 @@
+{
+  "name": "INEX Agent",
+  "description": "A dark-themed, mobile-first AI chat platform with multiple AI levels, real-time streaming, and token/cost tracking.",
+  "requestFramePermissions": []
+}
