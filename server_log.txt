@@ -3,3 +3,5 @@
 > tsx server.ts
 
 Server running on http://localhost:3000
+11:30:16 PM [vite] (client) page reload package.json
+11:30:16 PM [vite] (client) page reload server_log.txt
