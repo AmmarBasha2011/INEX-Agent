@@ -79,9 +79,21 @@ const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
   return <code className={`${className} bg-white/10 px-1.5 py-0.5 rounded-md text-blue-300 font-mono text-[0.9em]`} {...props}>{children}</code>;
 };
 
+import { ToastContainer, ToastMessage, ToastType } from './components/Toast';
+
 export default function App() {
   const [settings, setSettings] = useState<Settings>(loadSettings());
   const [showSettings, setShowSettings] = useState(false);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  
+  const addToast = (message: string, type: ToastType = 'info') => {
+    const id = Math.random().toString(36).substr(2, 9);
+    setToasts(prev => [...prev, { id, message, type }]);
+  };
+
+  const dismissToast = (id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
   const [balance, setBalance] = useState<number>(() => {
     const saved = localStorage.getItem('inex_balance');
     return saved ? parseFloat(saved) : 2.0000;
@@ -130,26 +142,47 @@ export default function App() {
     return () => clearTimeout(timeoutId);
   }, [conversations, activeId]);
 
-  const handleAddFile = (file: FileNode) => {
-    setFiles(prev => [...prev, file]);
-    saveFileToDB(file);
+  const handleAddFile = async (file: FileNode) => {
+    try {
+      setFiles(prev => [...prev, file]);
+      await saveFileToDB(file);
+      addToast(`File "${file.name}" created successfully`, 'success');
+    } catch (error) {
+      console.error('Error adding file:', error);
+      addToast('Failed to save file', 'error');
+    }
   };
 
-  const handleUpdateFile = (file: FileNode) => {
-    setFiles(prev => prev.map(f => f.id === file.id ? file : f));
-    saveFileToDB(file);
+  const handleUpdateFile = async (file: FileNode) => {
+    try {
+      setFiles(prev => prev.map(f => f.id === file.id ? file : f));
+      await saveFileToDB(file);
+      addToast(`File "${file.name}" updated successfully`, 'success');
+    } catch (error) {
+      console.error('Error updating file:', error);
+      addToast('Failed to update file', 'error');
+    }
   };
 
-  const handleDeleteFile = (id: string) => {
-    // Recursive delete
-    const getChildrenIds = (parentId: string): string[] => {
-      const children = files.filter(f => f.parentId === parentId);
-      return children.reduce((acc, child) => [...acc, child.id, ...getChildrenIds(child.id)], [] as string[]);
-    };
-    const idsToDelete = [id, ...getChildrenIds(id)];
-    
-    setFiles(prev => prev.filter(f => !idsToDelete.includes(f.id)));
-    idsToDelete.forEach(delId => deleteFileFromDB(delId));
+  const handleDeleteFile = async (id: string) => {
+    try {
+      console.log('Deleting file:', id);
+      // Recursive delete
+      const getChildrenIds = (parentId: string): string[] => {
+        const children = files.filter(f => f.parentId === parentId);
+        return children.reduce((acc, child) => [...acc, child.id, ...getChildrenIds(child.id)], [] as string[]);
+      };
+      const idsToDelete = [id, ...getChildrenIds(id)];
+      console.log('IDs to delete:', idsToDelete);
+      
+      setFiles(prev => prev.filter(f => !idsToDelete.includes(f.id)));
+      
+      await Promise.all(idsToDelete.map(delId => deleteFileFromDB(delId)));
+      addToast('File deleted successfully', 'success');
+    } catch (error) {
+      console.error('Error deleting file:', error);
+      addToast('Failed to delete file', 'error');
+    }
   };
 
   const [selectedLevel, setSelectedLevel] = useState<string>('fast');
@@ -356,18 +389,18 @@ export default function App() {
         }
 
         // @ts-ignore
-        if (chunk.functionCalls && chunk.functionCalls.length > 0) {
-          // @ts-ignore
-          functionCallFound = chunk.functionCalls[0];
-          break; // Stop processing, need user approval
-        }
-
-        // @ts-ignore
         if (chunk.usageMetadata) {
           // @ts-ignore
           pTokens = chunk.usageMetadata.promptTokenCount || pTokens;
           // @ts-ignore
           cTokens = chunk.usageMetadata.candidatesTokenCount || cTokens;
+        }
+
+        // @ts-ignore
+        if (chunk.functionCalls && chunk.functionCalls.length > 0) {
+          // @ts-ignore
+          functionCallFound = chunk.functionCalls[0];
+          break; // Stop processing, need user approval
         }
 
         setConversations(prev => prev.map(c => {
@@ -407,6 +440,24 @@ export default function App() {
       }
 
       if (functionCallFound) {
+        // Estimate tokens if API didn't provide them (for function call scenario)
+        if (pTokens === 0) {
+          pTokens = Math.ceil(contents.reduce((acc, c) => {
+            let size = 0;
+            if (c.parts) {
+              c.parts.forEach((p: any) => {
+                if (p.text) size += p.text.length;
+                if (p.inlineData) size += Math.ceil(p.inlineData.data.length / 4);
+              });
+            }
+            return acc + size;
+          }, 0) / 4);
+        }
+        if (cTokens === 0) {
+          cTokens = Math.ceil(currentText.length / 4);
+        }
+        const totalTokens = pTokens + cTokens;
+
         setConversations(prev => prev.map(c => {
           if (c.id === convId) {
             return {
@@ -419,7 +470,8 @@ export default function App() {
                   name: functionCallFound.name,
                   args: functionCallFound.args
                 },
-                status: 'waiting_approval'
+                status: 'waiting_approval',
+                tokens: { prompt: pTokens, candidates: cTokens, total: totalTokens }
               } : m)
             };
           }
@@ -431,7 +483,16 @@ export default function App() {
 
       // Estimate tokens if API didn't provide them
       if (pTokens === 0) {
-        pTokens = Math.ceil(contents.reduce((acc, c) => acc + (c.parts[0].text ? c.parts[0].text.length : 10), 0) / 4);
+        pTokens = Math.ceil(contents.reduce((acc, c) => {
+          let size = 0;
+          if (c.parts) {
+            c.parts.forEach((p: any) => {
+              if (p.text) size += p.text.length;
+              if (p.inlineData) size += Math.ceil(p.inlineData.data.length / 4);
+            });
+          }
+          return acc + size;
+        }, 0) / 4);
       }
       if (cTokens === 0) {
         cTokens = Math.ceil(currentText.length / 4);
@@ -908,14 +969,22 @@ export default function App() {
     }
 
     // Calculate flexible cost
-    const getTokenCost = (obj: any) => {
+    const getTokenCount = (obj: any) => {
       if (obj === undefined || obj === null) return 0;
       const str = typeof obj === 'string' ? obj : JSON.stringify(obj);
-      return (str.length / 4) * 0.0000025;
+      return Math.ceil(str.length / 4);
     };
 
-    const inputTokensCost = getTokenCost(call.args);
-    const outputTokensCost = getTokenCost(result);
+    const inputTokens = getTokenCount(call.args);
+    const outputTokens = getTokenCount(result);
+    const totalToolTokens = inputTokens + outputTokens;
+
+    const getTokenCost = (tokens: number) => {
+      return tokens * 0.0000025;
+    };
+
+    const inputTokensCost = getTokenCost(inputTokens);
+    const outputTokensCost = getTokenCost(outputTokens);
     const totalTokenCost = inputTokensCost + outputTokensCost;
 
     if (call.name === 'webSearch') {
@@ -947,7 +1016,8 @@ export default function App() {
       text: `Executed: ${call.name}`,
       timestamp: Date.now(),
       status: 'done',
-      toolResult: { id: call.id, name: call.name, result: result, cost: costToAdd }
+      toolResult: { id: call.id, name: call.name, result: result, cost: costToAdd },
+      tokens: { prompt: inputTokens, candidates: outputTokens, total: totalToolTokens }
     };
 
     const updatedHistory = conv.messages.map(m => m.id === msgId ? { ...m, status: 'done' as MessageStatus } : m).concat(toolResMsg);
@@ -967,13 +1037,17 @@ export default function App() {
     if (!msg || !msg.pendingToolCall) return;
 
     const call = msg.pendingToolCall;
+    const rejectionText = "User denied permission to run this tool.";
+    const rejectionTokens = Math.ceil(rejectionText.length / 4);
+    
     const toolResMsg: Message = {
       id: `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       role: 'function',
       text: `User rejected tool execution.`,
       timestamp: Date.now(),
       status: 'done',
-      toolResult: { id: call.id, name: call.name, result: "User denied permission to run this tool." }
+      toolResult: { id: call.id, name: call.name, result: rejectionText },
+      tokens: { prompt: 0, candidates: rejectionTokens, total: rejectionTokens }
     };
 
     const updatedHistory = conv.messages.map(m => m.id === msgId ? { ...m, status: 'done' as MessageStatus } : m).concat(toolResMsg);
@@ -1195,6 +1269,7 @@ export default function App() {
           onUpdateFile={handleUpdateFile}
           onDeleteFile={handleDeleteFile}
           onClose={() => setShowFileManager(false)} 
+          onError={(msg) => addToast(msg, 'error')}
         />
       )}
 
@@ -1668,6 +1743,7 @@ export default function App() {
           </div>
         </div>
       </div>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }

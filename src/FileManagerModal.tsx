@@ -20,6 +20,7 @@ interface FileManagerModalProps {
   onUpdateFile: (file: FileNode) => void;
   onDeleteFile: (id: string) => void;
   onClose: () => void;
+  onError?: (message: string) => void;
 }
 
 export const getFileIcon = (file: FileNode) => {
@@ -47,7 +48,7 @@ export const getFileIcon = (file: FileNode) => {
   return <FileIcon className="w-5 h-5 text-zinc-400 shrink-0" />;
 };
 
-export default function FileManagerModal({ files, onAddFile, onUpdateFile, onDeleteFile, onClose }: FileManagerModalProps) {
+export default function FileManagerModal({ files, onAddFile, onUpdateFile, onDeleteFile, onClose, onError }: FileManagerModalProps) {
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [editingFile, setEditingFile] = useState<FileNode | null>(null);
   const [editContent, setEditContent] = useState('');
@@ -88,6 +89,14 @@ export default function FileManagerModal({ files, onAddFile, onUpdateFile, onDel
       const reader = new FileReader();
       const isBinary = file.type.startsWith('image/') || file.type.startsWith('audio/') || file.type.startsWith('video/') || file.type === 'application/pdf';
 
+      reader.onerror = () => {
+        console.error("FileReader error:", reader.error);
+        if (onError) onError(`Failed to read file: ${file.name}`);
+        // Continue to next file even if one fails
+        loadedSize += file.size;
+        processNextFile(index + 1);
+      };
+
       reader.onprogress = (ev) => {
         if (ev.lengthComputable) {
           const fileLoaded = ev.loaded;
@@ -105,23 +114,29 @@ export default function FileManagerModal({ files, onAddFile, onUpdateFile, onDel
       };
 
       reader.onload = (ev) => {
-        const content = ev.target?.result as string;
-        
-        const newNode: FileNode = {
-          id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          name: file.name,
-          isFolder: false,
-          parentId: currentFolderId,
-          content: isBinary ? undefined : content,
-          base64: isBinary ? content.split(',')[1] : undefined,
-          mimeType: file.type,
-          createdAt: Date.now(),
-          updatedAt: Date.now()
-        };
-        
-        onAddFile(newNode);
-        loadedSize += file.size;
-        processNextFile(index + 1);
+        try {
+          const content = ev.target?.result as string;
+          
+          const newNode: FileNode = {
+            id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            name: file.name,
+            isFolder: false,
+            parentId: currentFolderId,
+            content: isBinary ? undefined : content,
+            base64: isBinary ? content.split(',')[1] : undefined,
+            mimeType: file.type,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          };
+          
+          onAddFile(newNode);
+          loadedSize += file.size;
+          processNextFile(index + 1);
+        } catch (err) {
+          console.error("Error processing file:", err);
+          if (onError) onError(`Failed to process file: ${file.name}`);
+          setUploading(false);
+        }
       };
       
       if (isBinary) {
@@ -180,6 +195,7 @@ export default function FileManagerModal({ files, onAddFile, onUpdateFile, onDel
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    console.log('Delete clicked for:', id);
     if (!confirm("Are you sure you want to delete this?")) return;
     onDeleteFile(id);
   };

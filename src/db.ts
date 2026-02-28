@@ -31,7 +31,9 @@ export const getFilesFromDB = async () => {
 
 export const deleteFileFromDB = async (id: string) => {
   const db = await initDB();
-  return db.delete('files', id);
+  const tx = db.transaction('files', 'readwrite');
+  await tx.store.delete(id);
+  await tx.done;
 };
 
 export const saveConversationToDB = async (conversation: any) => {
