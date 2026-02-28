@@ -287,6 +287,257 @@ export default function App() {
     setIsLoading(false);
   };
 
+  const filesRef = useRef(files);
+  const settingsRef = useRef(settings);
+  
+  useEffect(() => { filesRef.current = files; }, [files]);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+
+  const executeToolLogic = async (call: any) => {
+    let result;
+    let costToAdd = 0;
+    const currentFiles = filesRef.current;
+    const currentSettings = settingsRef.current;
+
+    try {
+      if (call.name === 'calculator') {
+        result = Function('"use strict";return (' + call.args.expression + ')')();
+      } else if (call.name === 'webSearch') {
+        const res = await fetch('/api/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: call.args.query, apiKey: currentSettings.apiKeys.search[0] })
+        });
+        const data = await res.json();
+        if (data.organic_results) {
+          result = data.organic_results.slice(0, 3).map((r: any) => ({ title: r.title, link: r.link, snippet: r.snippet }));
+        } else {
+          result = data;
+        }
+      } else if (call.name === 'generateImage') {
+        const imageAi = new GoogleGenAI({ apiKey: currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY });
+        const res = await imageAi.models.generateContent({
+          model: call.args.model || 'gemini-2.5-flash-image',
+          contents: call.args.prompt,
+        });
+        let base64Image = '';
+        for (const part of res.candidates?.[0]?.content?.parts || []) {
+          if (part.inlineData) {
+            base64Image = part.inlineData.data;
+            break;
+          }
+        }
+        if (base64Image) {
+          result = { imageBase64: base64Image };
+        } else {
+          result = "Failed to generate image.";
+        }
+      } else if (call.name === 'generateAudio') {
+        const audioAi = new GoogleGenAI({ apiKey: currentSettings.apiKeys.audio[0] || process.env.GEMINI_API_KEY });
+        const res = await audioAi.models.generateContent({
+          model: 'gemini-2.5-flash-preview-tts',
+          contents: call.args.text,
+          config: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: call.args.voice || 'Kore' }
+              }
+            }
+          }
+        });
+        const base64Audio = res.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (base64Audio) {
+          try {
+            const binaryStr = atob(base64Audio);
+            const len = binaryStr.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) bytes[i] = binaryStr.charCodeAt(i);
+            
+            const pcm16 = new Int16Array(bytes.buffer);
+            const wavHeader = new ArrayBuffer(44);
+            const view = new DataView(wavHeader);
+            
+            const writeString = (offset: number, string: string) => {
+              for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+            };
+            
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + pcm16.length * 2, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true);
+            view.setUint32(24, 24000, true);
+            view.setUint32(28, 24000 * 2, true);
+            view.setUint16(32, 2, true);
+            view.setUint16(34, 16, true);
+            writeString(36, 'data');
+            view.setUint32(40, pcm16.length * 2, true);
+            
+            const wavBytes = new Uint8Array(44 + pcm16.length * 2);
+            wavBytes.set(new Uint8Array(wavHeader), 0);
+            wavBytes.set(new Uint8Array(pcm16.buffer), 44);
+            
+            let binary = '';
+            const CHUNK_SIZE = 0x8000;
+            for (let i = 0; i < wavBytes.length; i += CHUNK_SIZE) {
+              binary += String.fromCharCode.apply(null, wavBytes.subarray(i, i + CHUNK_SIZE) as any);
+            }
+            const wavBase64 = btoa(binary);
+            result = { audioBase64: wavBase64 };
+          } catch (err) {
+            console.error("Failed to convert PCM to WAV", err);
+            result = { audioBase64: base64Audio };
+          }
+        } else {
+          result = "Failed to generate audio.";
+        }
+      } else if (call.name === 'saveMemory') {
+        const newMemory = {
+          id: `mem-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          content: call.args.content,
+          createdAt: Date.now()
+        };
+        const newSettings = { ...currentSettings, memories: [...(currentSettings.memories || []), newMemory] };
+        setSettings(newSettings);
+        saveSettings(newSettings);
+        result = `Memory saved successfully with ID: ${newMemory.id}`;
+      } else if (call.name === 'updateMemory') {
+        const memIndex = currentSettings.memories.findIndex(m => m.id === call.args.id);
+        if (memIndex > -1) {
+          const updatedMemories = [...currentSettings.memories];
+          updatedMemories[memIndex].content = call.args.content;
+          const newSettings = { ...currentSettings, memories: updatedMemories };
+          setSettings(newSettings);
+          saveSettings(newSettings);
+          result = `Memory ${call.args.id} updated successfully.`;
+        } else {
+          result = `Memory with ID ${call.args.id} not found.`;
+        }
+      } else if (call.name === 'deleteMemory') {
+        const memIndex = currentSettings.memories.findIndex(m => m.id === call.args.id);
+        if (memIndex > -1) {
+          const updatedMemories = currentSettings.memories.filter(m => m.id !== call.args.id);
+          const newSettings = { ...currentSettings, memories: updatedMemories };
+          setSettings(newSettings);
+          saveSettings(newSettings);
+          result = `Memory ${call.args.id} deleted successfully.`;
+        } else {
+          result = `Memory with ID ${call.args.id} not found.`;
+        }
+      } else if (['createFile', 'createFolder', 'deleteNode', 'readFile', 'editFile', 'renameNode', 'listFiles'].includes(call.name)) {
+        if (call.name === 'createFile') {
+          const newNode: FileNode = {
+            id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            name: call.args.name,
+            isFolder: false,
+            parentId: call.args.parentId || null,
+            content: call.args.content,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          };
+          handleAddFile(newNode);
+          result = `File created successfully with ID: ${newNode.id}`;
+        } else if (call.name === 'createFolder') {
+          const newNode: FileNode = {
+            id: `folder-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            name: call.args.name,
+            isFolder: true,
+            parentId: call.args.parentId || null,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          };
+          handleAddFile(newNode);
+          result = `Folder created successfully with ID: ${newNode.id}`;
+        } else if (call.name === 'deleteNode') {
+          const nodeExists = currentFiles.some(f => f.id === call.args.id);
+          if (nodeExists) {
+            handleDeleteFile(call.args.id);
+            result = `Node and its children deleted successfully.`;
+          } else {
+            result = `Node with ID ${call.args.id} not found.`;
+          }
+        } else if (call.name === 'readFile') {
+          const node = currentFiles.find(f => f.id === call.args.id);
+          if (node && !node.isFolder) {
+            result = node.content || "File is empty or binary.";
+          } else {
+            result = `File with ID ${call.args.id} not found or is a folder.`;
+          }
+        } else if (call.name === 'editFile') {
+          const file = currentFiles.find(f => f.id === call.args.id);
+          if (file && !file.isFolder) {
+            handleUpdateFile({ ...file, content: call.args.content, updatedAt: Date.now() });
+            result = `File ${call.args.id} edited successfully.`;
+          } else {
+            result = `File with ID ${call.args.id} not found or is a folder.`;
+          }
+        } else if (call.name === 'renameNode') {
+          const file = currentFiles.find(f => f.id === call.args.id);
+          if (file) {
+            handleUpdateFile({ ...file, name: call.args.newName, updatedAt: Date.now() });
+            result = `Node ${call.args.id} renamed to ${call.args.newName}.`;
+          } else {
+            result = `Node with ID ${call.args.id} not found.`;
+          }
+        } else if (call.name === 'listFiles') {
+          const parentId = call.args.parentId || null;
+          const children = currentFiles.filter(f => f.parentId === parentId).map(f => ({ id: f.id, name: f.name, isFolder: f.isFolder }));
+          result = children.length > 0 ? children : "Folder is empty.";
+        }
+      } else {
+        result = "Tool not supported.";
+      }
+    } catch (e) {
+      result = "Error executing tool";
+    }
+
+    const getTokenCount = (obj: any) => {
+      if (obj === undefined || obj === null) return 0;
+      const str = typeof obj === 'string' ? obj : JSON.stringify(obj);
+      return Math.ceil(str.length / 4);
+    };
+
+    const inputTokens = getTokenCount(call.args);
+    const outputTokens = getTokenCount(result);
+    const totalToolTokens = inputTokens + outputTokens;
+
+    const getTokenCost = (tokens: number) => {
+      return tokens * 0.0000025;
+    };
+
+    const inputTokensCost = getTokenCost(inputTokens);
+    const outputTokensCost = getTokenCost(outputTokens);
+    const totalTokenCost = inputTokensCost + outputTokensCost;
+
+    if (call.name === 'webSearch') {
+      costToAdd = (0.01 + totalTokenCost) * 1.1;
+      if (currentSettings.apiKeys.search[0]) costToAdd = totalTokenCost * 1.1;
+    } else if (call.name === 'calculator') {
+      costToAdd = totalTokenCost * 1.1;
+    } else if (call.name === 'generateImage') {
+      const baseCost = call.args.model === 'gemini-3.1-flash-image-preview' ? 0.06 : 0.06;
+      costToAdd = (baseCost + totalTokenCost) * 1.1;
+      if (currentSettings.apiKeys.image[0]) costToAdd = totalTokenCost * 1.1;
+    } else if (call.name === 'generateAudio') {
+      const wordCount = call.args.text ? call.args.text.trim().split(/\s+/).length : 0;
+      costToAdd = (0.01 + totalTokenCost + (wordCount * 0.005)) * 1.1;
+      if (currentSettings.apiKeys.audio[0]) costToAdd = totalTokenCost * 1.1;
+    } else if (['createFile', 'createFolder', 'deleteNode', 'readFile', 'editFile', 'renameNode', 'listFiles'].includes(call.name)) {
+      costToAdd = (totalTokenCost + 0.005) * 1.1;
+    } else if (['saveMemory', 'updateMemory', 'deleteMemory'].includes(call.name)) {
+      costToAdd = (totalTokenCost + 0.005) * 1.1;
+    }
+
+    if (costToAdd > 0) {
+      setBalance(prev => Math.max(0, prev - costToAdd));
+    }
+
+    return { result, costToAdd, inputTokens, outputTokens, totalToolTokens };
+  };
+
   const runAI = async (convId: string, history: Message[]) => {
     setIsLoading(true);
     abortControllerRef.current = new AbortController();
@@ -457,6 +708,68 @@ export default function App() {
           cTokens = Math.ceil(currentText.length / 4);
         }
         const totalTokens = pTokens + cTokens;
+
+        const currentConv = conversations.find(c => c.id === convId);
+        const mode = currentConv?.mode || 'manual';
+
+        if (mode === 'auto') {
+           setConversations(prev => prev.map(c => {
+            if (c.id === convId) {
+              return {
+                ...c,
+                messages: c.messages.map(m => m.id === modelMessageId ? { 
+                  ...m, 
+                  text: currentText,
+                  pendingToolCall: {
+                    id: functionCallFound.id,
+                    name: functionCallFound.name,
+                    args: functionCallFound.args
+                  },
+                  status: 'processing',
+                  tokens: { prompt: pTokens, candidates: cTokens, total: totalTokens }
+                } : m)
+              };
+            }
+            return c;
+          }));
+
+          const call = { id: functionCallFound.id, name: functionCallFound.name, args: functionCallFound.args };
+          const { result, costToAdd, inputTokens, outputTokens, totalToolTokens } = await executeToolLogic(call);
+
+          const toolResMsg: Message = {
+            id: `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            role: 'function',
+            text: `Executed: ${call.name}`,
+            timestamp: Date.now(),
+            status: 'done',
+            toolResult: { id: call.id, name: call.name, result: result, cost: costToAdd },
+            tokens: { prompt: inputTokens, candidates: outputTokens, total: totalToolTokens }
+          };
+
+          const modelMsg: Message = {
+             id: modelMessageId,
+             role: 'model',
+             text: currentText,
+             timestamp: Date.now(), // approximate
+             status: 'done',
+             pendingToolCall: call,
+             tokens: { prompt: pTokens, candidates: cTokens, total: totalTokens }
+          };
+
+          // We need to update the conversation with the completed model message AND the tool result
+          // But wait, the model message is already in the state (as processing/waiting).
+          // We need to update it to done, and append the tool result.
+          
+          const newHistory = [...history, modelMsg, toolResMsg];
+
+          setConversations(prev => prev.map(c => c.id === convId ? {
+            ...c,
+            messages: c.messages.map(m => m.id === modelMessageId ? { ...m, status: 'done' as MessageStatus } : m).concat(toolResMsg)
+          } : c));
+
+          await runAI(convId, newHistory);
+          return;
+        }
 
         setConversations(prev => prev.map(c => {
           if (c.id === convId) {
@@ -762,8 +1075,6 @@ export default function App() {
     if (!msg || !msg.pendingToolCall) return;
 
     const call = msg.pendingToolCall;
-    let result;
-    let costToAdd = 0;
     
     // Set status to processing while tool runs
     setConversations(prev => prev.map(c => c.id === convId ? {
@@ -771,244 +1082,7 @@ export default function App() {
       messages: c.messages.map(m => m.id === msgId ? { ...m, status: 'processing' as MessageStatus } : m)
     } : c));
 
-    try {
-      if (call.name === 'calculator') {
-        // Safe evaluation for basic math
-        result = Function('"use strict";return (' + call.args.expression + ')')();
-      } else if (call.name === 'webSearch') {
-        const res = await fetch('/api/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: call.args.query, apiKey: settings.apiKeys.search[0] })
-        });
-        const data = await res.json();
-        if (data.organic_results) {
-          result = data.organic_results.slice(0, 3).map((r: any) => ({ title: r.title, link: r.link, snippet: r.snippet }));
-        } else {
-          result = data;
-        }
-      } else if (call.name === 'generateImage') {
-        const imageAi = new GoogleGenAI({ apiKey: settings.apiKeys.image[0] || process.env.GEMINI_API_KEY });
-        const res = await imageAi.models.generateContent({
-          model: call.args.model || 'gemini-2.5-flash-image',
-          contents: call.args.prompt,
-        });
-        let base64Image = '';
-        for (const part of res.candidates?.[0]?.content?.parts || []) {
-          if (part.inlineData) {
-            base64Image = part.inlineData.data;
-            break;
-          }
-        }
-        if (base64Image) {
-          result = { imageBase64: base64Image };
-        } else {
-          result = "Failed to generate image.";
-        }
-      } else if (call.name === 'generateAudio') {
-        const audioAi = new GoogleGenAI({ apiKey: settings.apiKeys.audio[0] || process.env.GEMINI_API_KEY });
-        const res = await audioAi.models.generateContent({
-          model: 'gemini-2.5-flash-preview-tts',
-          contents: call.args.text,
-          config: {
-            responseModalities: ['AUDIO'],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: call.args.voice || 'Kore' }
-              }
-            }
-          }
-        });
-        const base64Audio = res.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-        if (base64Audio) {
-          try {
-            // Convert raw PCM to WAV
-            const binaryStr = atob(base64Audio);
-            const len = binaryStr.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) bytes[i] = binaryStr.charCodeAt(i);
-            
-            const pcm16 = new Int16Array(bytes.buffer);
-            const wavHeader = new ArrayBuffer(44);
-            const view = new DataView(wavHeader);
-            
-            const writeString = (offset: number, string: string) => {
-              for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
-            };
-            
-            writeString(0, 'RIFF');
-            view.setUint32(4, 36 + pcm16.length * 2, true);
-            writeString(8, 'WAVE');
-            writeString(12, 'fmt ');
-            view.setUint32(16, 16, true);
-            view.setUint16(20, 1, true);
-            view.setUint16(22, 1, true); // 1 channel
-            view.setUint32(24, 24000, true); // sample rate
-            view.setUint32(28, 24000 * 2, true); // byte rate
-            view.setUint16(32, 2, true); // block align
-            view.setUint16(34, 16, true); // bits per sample
-            writeString(36, 'data');
-            view.setUint32(40, pcm16.length * 2, true);
-            
-            const wavBytes = new Uint8Array(44 + pcm16.length * 2);
-            wavBytes.set(new Uint8Array(wavHeader), 0);
-            wavBytes.set(new Uint8Array(pcm16.buffer), 44);
-            
-            let binary = '';
-            const CHUNK_SIZE = 0x8000;
-            for (let i = 0; i < wavBytes.length; i += CHUNK_SIZE) {
-              binary += String.fromCharCode.apply(null, wavBytes.subarray(i, i + CHUNK_SIZE) as any);
-            }
-            const wavBase64 = btoa(binary);
-            result = { audioBase64: wavBase64 };
-          } catch (err) {
-            console.error("Failed to convert PCM to WAV", err);
-            result = { audioBase64: base64Audio }; // fallback
-          }
-        } else {
-          result = "Failed to generate audio.";
-        }
-      } else if (call.name === 'saveMemory') {
-        const newMemory = {
-          id: `mem-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          content: call.args.content,
-          createdAt: Date.now()
-        };
-        const newSettings = { ...settings, memories: [...(settings.memories || []), newMemory] };
-        setSettings(newSettings);
-        saveSettings(newSettings);
-        result = `Memory saved successfully with ID: ${newMemory.id}`;
-      } else if (call.name === 'updateMemory') {
-        const memIndex = settings.memories.findIndex(m => m.id === call.args.id);
-        if (memIndex > -1) {
-          const updatedMemories = [...settings.memories];
-          updatedMemories[memIndex].content = call.args.content;
-          const newSettings = { ...settings, memories: updatedMemories };
-          setSettings(newSettings);
-          saveSettings(newSettings);
-          result = `Memory ${call.args.id} updated successfully.`;
-        } else {
-          result = `Memory with ID ${call.args.id} not found.`;
-        }
-      } else if (call.name === 'deleteMemory') {
-        const memIndex = settings.memories.findIndex(m => m.id === call.args.id);
-        if (memIndex > -1) {
-          const updatedMemories = settings.memories.filter(m => m.id !== call.args.id);
-          const newSettings = { ...settings, memories: updatedMemories };
-          setSettings(newSettings);
-          saveSettings(newSettings);
-          result = `Memory ${call.args.id} deleted successfully.`;
-        } else {
-          result = `Memory with ID ${call.args.id} not found.`;
-        }
-      } else if (['createFile', 'createFolder', 'deleteNode', 'readFile', 'editFile', 'renameNode', 'listFiles'].includes(call.name)) {
-        if (call.name === 'createFile') {
-          const newNode: FileNode = {
-            id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            name: call.args.name,
-            isFolder: false,
-            parentId: call.args.parentId || null,
-            content: call.args.content,
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-          };
-          handleAddFile(newNode);
-          result = `File created successfully with ID: ${newNode.id}`;
-        } else if (call.name === 'createFolder') {
-          const newNode: FileNode = {
-            id: `folder-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            name: call.args.name,
-            isFolder: true,
-            parentId: call.args.parentId || null,
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-          };
-          handleAddFile(newNode);
-          result = `Folder created successfully with ID: ${newNode.id}`;
-        } else if (call.name === 'deleteNode') {
-          const nodeExists = files.some(f => f.id === call.args.id);
-          if (nodeExists) {
-            handleDeleteFile(call.args.id);
-            result = `Node and its children deleted successfully.`;
-          } else {
-            result = `Node with ID ${call.args.id} not found.`;
-          }
-        } else if (call.name === 'readFile') {
-          const node = files.find(f => f.id === call.args.id);
-          if (node && !node.isFolder) {
-            result = node.content || "File is empty or binary.";
-          } else {
-            result = `File with ID ${call.args.id} not found or is a folder.`;
-          }
-        } else if (call.name === 'editFile') {
-          const file = files.find(f => f.id === call.args.id);
-          if (file && !file.isFolder) {
-            handleUpdateFile({ ...file, content: call.args.content, updatedAt: Date.now() });
-            result = `File ${call.args.id} edited successfully.`;
-          } else {
-            result = `File with ID ${call.args.id} not found or is a folder.`;
-          }
-        } else if (call.name === 'renameNode') {
-          const file = files.find(f => f.id === call.args.id);
-          if (file) {
-            handleUpdateFile({ ...file, name: call.args.newName, updatedAt: Date.now() });
-            result = `Node ${call.args.id} renamed to ${call.args.newName}.`;
-          } else {
-            result = `Node with ID ${call.args.id} not found.`;
-          }
-        } else if (call.name === 'listFiles') {
-          const parentId = call.args.parentId || null;
-          const children = files.filter(f => f.parentId === parentId).map(f => ({ id: f.id, name: f.name, isFolder: f.isFolder }));
-          result = children.length > 0 ? children : "Folder is empty.";
-        }
-      } else {
-        result = "Tool not supported.";
-      }
-    } catch (e) {
-      result = "Error executing tool";
-    }
-
-    // Calculate flexible cost
-    const getTokenCount = (obj: any) => {
-      if (obj === undefined || obj === null) return 0;
-      const str = typeof obj === 'string' ? obj : JSON.stringify(obj);
-      return Math.ceil(str.length / 4);
-    };
-
-    const inputTokens = getTokenCount(call.args);
-    const outputTokens = getTokenCount(result);
-    const totalToolTokens = inputTokens + outputTokens;
-
-    const getTokenCost = (tokens: number) => {
-      return tokens * 0.0000025;
-    };
-
-    const inputTokensCost = getTokenCost(inputTokens);
-    const outputTokensCost = getTokenCost(outputTokens);
-    const totalTokenCost = inputTokensCost + outputTokensCost;
-
-    if (call.name === 'webSearch') {
-      costToAdd = (0.01 + totalTokenCost) * 1.1;
-      if (settings.apiKeys.search[0]) costToAdd = totalTokenCost * 1.1;
-    } else if (call.name === 'calculator') {
-      costToAdd = totalTokenCost * 1.1;
-    } else if (call.name === 'generateImage') {
-      const baseCost = call.args.model === 'gemini-3.1-flash-image-preview' ? 0.06 : 0.06;
-      costToAdd = (baseCost + totalTokenCost) * 1.1;
-      if (settings.apiKeys.image[0]) costToAdd = totalTokenCost * 1.1;
-    } else if (call.name === 'generateAudio') {
-      const wordCount = call.args.text ? call.args.text.trim().split(/\s+/).length : 0;
-      costToAdd = (0.01 + totalTokenCost + (wordCount * 0.005)) * 1.1;
-      if (settings.apiKeys.audio[0]) costToAdd = totalTokenCost * 1.1;
-    } else if (['createFile', 'createFolder', 'deleteNode', 'readFile', 'editFile', 'renameNode', 'listFiles'].includes(call.name)) {
-      costToAdd = (totalTokenCost + 0.005) * 1.1;
-    } else if (['saveMemory', 'updateMemory', 'deleteMemory'].includes(call.name)) {
-      costToAdd = (totalTokenCost + 0.005) * 1.1;
-    }
-
-    if (costToAdd > 0) {
-      setBalance(prev => Math.max(0, prev - costToAdd));
-    }
+    const { result, costToAdd, inputTokens, outputTokens, totalToolTokens } = await executeToolLogic(call);
 
     const toolResMsg: Message = {
       id: `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -1028,6 +1102,11 @@ export default function App() {
     } : c));
 
     await runAI(convId, updatedHistory);
+  };
+
+  const toggleAutoMode = () => {
+    if (!activeId) return;
+    setConversations(prev => prev.map(c => c.id === activeId ? { ...c, mode: c.mode === 'auto' ? 'manual' : 'auto' } : c));
   };
 
   const handleRejectTool = async (convId: string, msgId: string) => {
@@ -1415,11 +1494,29 @@ export default function App() {
           </div>
 
           {/* Model Selector */}
-          <div className="relative">
-            <button 
-              onClick={() => setShowLevelSelector(!showLevelSelector)} 
-              className={`flex items-center gap-2.5 border px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 active:scale-95 shadow-lg hover:shadow-xl ${theme.bg} ${theme.border} text-white hover:brightness-110`}
-            >
+          <div className="relative flex items-center gap-4">
+            {activeId && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-zinc-400">Auto Driven</span>
+                <button
+                  onClick={toggleAutoMode}
+                  className={`w-10 h-5 rounded-full p-1 transition-colors ${activeConversation?.mode === 'auto' ? 'bg-blue-500' : 'bg-zinc-700'}`}
+                >
+                  <motion.div 
+                    layout
+                    className="w-3 h-3 rounded-full bg-white shadow-sm"
+                    animate={{ x: activeConversation?.mode === 'auto' ? 20 : 0 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  />
+                </button>
+              </div>
+            )}
+            
+            <div className="relative">
+              <button 
+                onClick={() => setShowLevelSelector(!showLevelSelector)} 
+                className={`flex items-center gap-2.5 border px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 active:scale-95 shadow-lg hover:shadow-xl ${theme.bg} ${theme.border} text-white hover:brightness-110`}
+              >
               <div className="p-1 bg-white/20 rounded-full">
                 {React.createElement(selectedLevelObj.icon, { className: "w-3.5 h-3.5 text-white" })}
               </div>
@@ -1468,10 +1565,19 @@ export default function App() {
               )}
             </AnimatePresence>
           </div>
+          </div>
         </header>
 
         {/* Chat Area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar scroll-smooth">
+        <div className={`flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar scroll-smooth transition-colors duration-500 ${activeConversation?.mode === 'auto' ? 'bg-blue-900/5' : ''}`}>
+          {activeConversation?.mode === 'auto' && (
+            <div className="absolute top-16 left-0 right-0 z-10 flex justify-center pointer-events-none">
+              <div className="bg-blue-500/10 border border-blue-500/20 text-blue-200 text-xs px-3 py-1 rounded-full backdrop-blur-md shadow-lg flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                Auto Driven Mode Active
+              </div>
+            </div>
+          )}
           {activeConversation?.messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto px-4">
               <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mb-4 border transition-colors duration-500 ${theme.bgLight} ${theme.border}`}>

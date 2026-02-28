@@ -41,4 +41,5 @@ export type Conversation = {
   messages: Message[];
   updatedAt: number;
   pinned?: boolean;
+  mode?: 'manual' | 'auto';
 };
