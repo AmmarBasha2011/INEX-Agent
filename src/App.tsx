@@ -5,9 +5,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, Type, FunctionDeclaration } from '@google/genai';
-import { Send, Menu, Plus, MessageSquare, X, Activity, Clock, Coins, ChevronDown, Bot, Zap, Timer, Copy, Download, Brain, Flame, Rocket, Sparkles, Check, RefreshCw, AlertTriangle, CheckCheck, Loader2, Calculator, Wrench, Square, Paperclip, FileText, XCircle, Globe } from 'lucide-react';
+import { Send, Menu, Plus, MessageSquare, X, Activity, Clock, Coins, ChevronDown, Bot, Zap, Timer, Copy, Download, Brain, Flame, Rocket, Sparkles, Check, RefreshCw, AlertTriangle, CheckCheck, Loader2, Calculator, Wrench, Square, Paperclip, FileText, XCircle, Globe, Settings as SettingsIcon, Pin, Edit2, Trash2, Image as ImageIcon, Mic, MoreVertical } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
+import SettingsModal, { Settings, loadSettings, saveSettings } from './SettingsModal';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -50,6 +51,32 @@ const webSearchTool: FunctionDeclaration = {
   }
 };
 
+const imageGenerationTool: FunctionDeclaration = {
+  name: 'generateImage',
+  description: 'Generate an image based on a prompt. Ask the user which image model they want to use (gemini-2.5-flash-image or gemini-3.1-flash-image-preview) before calling this.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      prompt: { type: Type.STRING, description: 'The image generation prompt' },
+      model: { type: Type.STRING, description: 'The model to use: gemini-2.5-flash-image or gemini-3.1-flash-image-preview' }
+    },
+    required: ['prompt', 'model']
+  }
+};
+
+const audioGenerationTool: FunctionDeclaration = {
+  name: 'generateAudio',
+  description: 'Generate spoken audio from text. Ask the user for the text and voice (Puck, Charon, Kore, Fenrir, Zephyr) before calling this.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      text: { type: Type.STRING, description: 'The text to speak' },
+      voice: { type: Type.STRING, description: 'The voice to use: Puck, Charon, Kore, Fenrir, or Zephyr' }
+    },
+    required: ['text', 'voice']
+  }
+};
+
 type MessageStatus = 'sending' | 'sent' | 'processing' | 'done' | 'error' | 'waiting_approval' | 'aborted';
 
 type Attachment = {
@@ -79,6 +106,7 @@ type Conversation = {
   title: string;
   messages: Message[];
   updatedAt: number;
+  pinned?: boolean;
 };
 
 const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
@@ -129,6 +157,8 @@ const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
 };
 
 export default function App() {
+  const [settings, setSettings] = useState<Settings>(loadSettings());
+  const [showSettings, setShowSettings] = useState(false);
   const [balance, setBalance] = useState<number>(2.0000);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -283,11 +313,13 @@ export default function App() {
       });
 
       const config: any = {
-        systemInstruction: "You are INEX Agent, an advanced AI assistant. Format your responses using markdown.",
-        tools: [{ functionDeclarations: [calculatorTool, webSearchTool] }]
+        systemInstruction: `You are INEX Agent, an advanced AI assistant. Format your responses using markdown.\n${settings.instructions ? `User Instructions: ${settings.instructions}` : ''}\n${settings.name ? `User Name: ${settings.name}` : ''}`,
+        tools: [{ functionDeclarations: [calculatorTool, webSearchTool, imageGenerationTool, audioGenerationTool] }]
       };
 
-      const stream = await ai.models.generateContentStream({
+      const aiInstance = settings.apiKeys.text[0] ? new GoogleGenAI({ apiKey: settings.apiKeys.text[0] }) : ai;
+
+      const stream = await aiInstance.models.generateContentStream({
         model: selectedLevelObj.model,
         contents: contents,
         config: config
@@ -393,8 +425,9 @@ export default function App() {
 
       const totalTokens = pTokens + cTokens;
       const cost = (pTokens * (selectedLevelObj.inPrice / 1000000)) + (cTokens * (selectedLevelObj.outPrice / 1000000));
+      const finalCost = settings.apiKeys.text[0] ? 0 : cost * 1.1; // Add 10%
 
-      setBalance(prev => Math.max(0, prev - cost));
+      setBalance(prev => Math.max(0, prev - finalCost));
 
       setConversations(prev => prev.map(c => {
         if (c.id === convId) {
@@ -404,7 +437,7 @@ export default function App() {
               ...m, 
               text: currentText,
               tokens: { prompt: pTokens, candidates: cTokens, total: totalTokens },
-              cost: cost,
+              cost: finalCost,
               duration: duration,
               status: 'done'
             } : m)
@@ -517,6 +550,7 @@ export default function App() {
 
     const call = msg.pendingToolCall;
     let result;
+    let costToAdd = 0;
     
     // Set status to processing while tool runs
     setConversations(prev => prev.map(c => c.id === convId ? {
@@ -532,7 +566,7 @@ export default function App() {
         const res = await fetch('/api/search', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: call.args.query })
+          body: JSON.stringify({ query: call.args.query, apiKey: settings.apiKeys.search[0] })
         });
         const data = await res.json();
         if (data.organic_results) {
@@ -540,11 +574,56 @@ export default function App() {
         } else {
           result = data;
         }
+        if (!settings.apiKeys.search[0]) costToAdd += 0.01;
+      } else if (call.name === 'generateImage') {
+        const imageAi = new GoogleGenAI({ apiKey: settings.apiKeys.image[0] || process.env.GEMINI_API_KEY });
+        const res = await imageAi.models.generateContent({
+          model: call.args.model || 'gemini-2.5-flash-image',
+          contents: call.args.prompt,
+        });
+        let base64Image = '';
+        for (const part of res.candidates?.[0]?.content?.parts || []) {
+          if (part.inlineData) {
+            base64Image = part.inlineData.data;
+            break;
+          }
+        }
+        if (base64Image) {
+          result = { imageBase64: base64Image };
+          if (!settings.apiKeys.image[0]) costToAdd += 0.05 * 1.1;
+        } else {
+          result = "Failed to generate image.";
+        }
+      } else if (call.name === 'generateAudio') {
+        const audioAi = new GoogleGenAI({ apiKey: settings.apiKeys.audio[0] || process.env.GEMINI_API_KEY });
+        const res = await audioAi.models.generateContent({
+          model: 'gemini-2.5-flash-preview-tts',
+          contents: call.args.text,
+          config: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: call.args.voice || 'Kore' }
+              }
+            }
+          }
+        });
+        const base64Audio = res.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (base64Audio) {
+          result = { audioBase64: base64Audio };
+          if (!settings.apiKeys.audio[0]) costToAdd += 0.02 * 1.1;
+        } else {
+          result = "Failed to generate audio.";
+        }
       } else {
         result = "Tool not supported.";
       }
     } catch (e) {
       result = "Error executing tool";
+    }
+
+    if (costToAdd > 0) {
+      setBalance(prev => Math.max(0, prev - costToAdd));
     }
 
     const toolResMsg: Message = {
@@ -638,7 +717,32 @@ export default function App() {
 
   const ToolOutputViewer = ({ name, result }: { name: string, result: any }) => {
     const [expanded, setExpanded] = useState(false);
-    const Icon = name === 'webSearch' ? Globe : Calculator;
+    let Icon = Calculator;
+    if (name === 'webSearch') Icon = Globe;
+    if (name === 'generateImage') Icon = ImageIcon;
+    if (name === 'generateAudio') Icon = Mic;
+
+    if (result?.imageBase64) {
+      return (
+        <div className="mt-2 rounded-xl overflow-hidden border border-white/10 bg-black/20 backdrop-blur-md p-2">
+          <img src={`data:image/jpeg;base64,${result.imageBase64}`} alt="Generated" className="w-full rounded-lg" />
+          <div className="mt-2 flex justify-end">
+            <a href={`data:image/jpeg;base64,${result.imageBase64}`} download="generated-image.jpg" className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors active:scale-95 border border-white/10">
+              <Download className="w-3.5 h-3.5" /> Download
+            </a>
+          </div>
+        </div>
+      );
+    }
+
+    if (result?.audioBase64) {
+      return (
+        <div className="mt-2 rounded-xl overflow-hidden border border-white/10 bg-black/20 backdrop-blur-md p-3">
+          <audio controls src={`data:audio/wav;base64,${result.audioBase64}`} className="w-full" />
+        </div>
+      );
+    }
+
     return (
       <div className="mt-2 rounded-xl overflow-hidden border border-white/10 bg-black/20 backdrop-blur-md">
         <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-zinc-300 hover:bg-white/5 transition-colors">
@@ -666,8 +770,48 @@ export default function App() {
     );
   };
 
+  const togglePin = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setConversations(prev => prev.map(c => c.id === id ? { ...c, pinned: !c.pinned } : c));
+  };
+
+  const deleteConv = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setConversations(prev => prev.filter(c => c.id !== id));
+    if (activeId === id) setActiveId(null);
+  };
+
+  const editTitle = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newTitle = prompt('Enter new title:');
+    if (newTitle) {
+      setConversations(prev => prev.map(c => c.id === id ? { ...c, title: newTitle } : c));
+    }
+  };
+
+  const exportConv = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const conv = conversations.find(c => c.id === id);
+    if (!conv) return;
+    const data = JSON.stringify(conv, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `conversation-${id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="flex h-[100dvh] w-full bg-black text-zinc-100 font-sans overflow-hidden selection:bg-blue-500/30 relative">
+      
+      <SettingsModal 
+        isOpen={showSettings} 
+        onClose={() => setShowSettings(false)} 
+        currentSettings={settings} 
+        onSave={(s) => { setSettings(s); saveSettings(s); }} 
+      />
       
       {/* Liquid Glass Background Blobs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0 transition-colors duration-1000">
@@ -696,9 +840,14 @@ export default function App() {
             </div>
             <h1 className="text-lg font-bold tracking-tight text-white">INEX Agent</h1>
           </div>
-          <button onClick={() => setSidebarOpen(false)} className="md:hidden p-2 -mr-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/10 active:bg-white/5">
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setShowSettings(true)} className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/10 active:bg-white/5">
+              <SettingsIcon className="w-5 h-5" />
+            </button>
+            <button onClick={() => setSidebarOpen(false)} className="md:hidden p-2 -mr-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/10 active:bg-white/5">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
         
         <div className="p-3 shrink-0">
@@ -712,15 +861,22 @@ export default function App() {
 
         <div className="flex-1 overflow-y-auto px-2 space-y-1 pb-4 custom-scrollbar">
           <div className="px-3 py-2 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Conversations</div>
-          {conversations.map((conv) => (
-            <button 
-              key={conv.id} 
-              onClick={() => { setActiveId(conv.id); setSidebarOpen(false); }} 
-              className={`w-full text-left px-3 py-3 rounded-xl text-sm truncate transition-all flex items-center gap-3 ${activeId === conv.id ? 'bg-white/10 text-white shadow-sm border border-white/10' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent active:bg-white/5'}`}
-            >
-              <MessageSquare className={`w-4 h-4 shrink-0 ${activeId === conv.id ? theme.text : 'opacity-70'}`} />
-              <span className="truncate text-[15px] md:text-sm">{conv.title}</span>
-            </button>
+          {[...conversations].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)).map((conv) => (
+            <div key={conv.id} className="group relative flex items-center">
+              <button 
+                onClick={() => { setActiveId(conv.id); setSidebarOpen(false); }} 
+                className={`w-full text-left px-3 py-3 rounded-xl text-sm truncate transition-all flex items-center gap-3 pr-20 ${activeId === conv.id ? 'bg-white/10 text-white shadow-sm border border-white/10' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent active:bg-white/5'}`}
+              >
+                <MessageSquare className={`w-4 h-4 shrink-0 ${activeId === conv.id ? theme.text : 'opacity-70'}`} />
+                <span className="truncate text-[15px] md:text-sm flex-1">{conv.pinned && <Pin className="w-3 h-3 inline mr-1 text-yellow-500" />}{conv.title}</span>
+              </button>
+              <div className="absolute right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-md rounded-lg p-0.5 border border-white/10">
+                <button onClick={(e) => togglePin(conv.id, e)} className="p-1.5 text-zinc-400 hover:text-yellow-400 hover:bg-white/10 rounded-md" title="Pin"><Pin className="w-3.5 h-3.5" /></button>
+                <button onClick={(e) => editTitle(conv.id, e)} className="p-1.5 text-zinc-400 hover:text-blue-400 hover:bg-white/10 rounded-md" title="Edit"><Edit2 className="w-3.5 h-3.5" /></button>
+                <button onClick={(e) => exportConv(conv.id, e)} className="p-1.5 text-zinc-400 hover:text-emerald-400 hover:bg-white/10 rounded-md" title="Export"><Download className="w-3.5 h-3.5" /></button>
+                <button onClick={(e) => deleteConv(conv.id, e)} className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-white/10 rounded-md" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
+              </div>
+            </div>
           ))}
         </div>
 
