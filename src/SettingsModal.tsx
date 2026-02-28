@@ -1,6 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Key, User, Settings as SettingsIcon, Plus, Trash2, Brain, Sparkles } from 'lucide-react';
+import { X, Save, Key, User, Settings as SettingsIcon, Plus, Trash2, Brain, Sparkles, Coins } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+
+export type BalanceLogEntry = {
+  id: string;
+  timestamp: number;
+  amount: number; // negative for cost, positive for refill
+  description: string; // e.g., "Tool Usage: webSearch", "Refill: $10"
+  balanceAfter: number;
+};
 
 export type Settings = {
   name: string;
@@ -11,6 +19,7 @@ export type Settings = {
   memoryEnabled: boolean;
   memories: { id: string; content: string; createdAt: number }[];
   preferences: string[];
+  balanceLogs: BalanceLogEntry[];
   apiKeys: {
     text: string[];
     image: string[];
@@ -28,6 +37,7 @@ export const defaultSettings: Settings = {
   memoryEnabled: false,
   memories: [],
   preferences: [],
+  balanceLogs: [],
   apiKeys: { text: [], image: [], audio: [], search: [] }
 };
 
@@ -40,7 +50,8 @@ export const loadSettings = (): Settings => {
         ...defaultSettings, 
         ...parsed, 
         memories: parsed.memories || [], 
-        preferences: parsed.preferences || [] 
+        preferences: parsed.preferences || [],
+        balanceLogs: parsed.balanceLogs || []
       };
     } catch (e) {
       return defaultSettings;
@@ -53,15 +64,16 @@ export const saveSettings = (settings: Settings) => {
   localStorage.setItem('inex_settings', JSON.stringify(settings));
 };
 
-export default function SettingsModal({ isOpen, onClose, currentSettings, onSave }: { isOpen: boolean, onClose: () => void, currentSettings: Settings, onSave: (s: Settings) => void }) {
+export default function SettingsModal({ isOpen, onClose, currentSettings, onSave, initialTab = 'profile' }: { isOpen: boolean, onClose: () => void, currentSettings: Settings, onSave: (s: Settings) => void, initialTab?: 'profile' | 'keys' | 'memory' | 'balance' }) {
   const [settings, setSettings] = useState<Settings>(currentSettings);
-  const [activeTab, setActiveTab] = useState<'profile' | 'keys' | 'memory'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'keys' | 'memory' | 'balance'>(initialTab);
 
   useEffect(() => {
     if (isOpen) {
       setSettings(currentSettings);
+      setActiveTab(initialTab);
     }
-  }, [isOpen, currentSettings]);
+  }, [isOpen, currentSettings, initialTab]);
 
   if (!isOpen) return null;
 
@@ -133,6 +145,12 @@ export default function SettingsModal({ isOpen, onClose, currentSettings, onSave
               className={`whitespace-nowrap flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'memory' ? 'bg-blue-600/20 text-blue-400' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
             >
               <Brain className="w-4 h-4" /> Memory
+            </button>
+            <button 
+              onClick={() => setActiveTab('balance')}
+              className={`whitespace-nowrap flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'balance' ? 'bg-blue-600/20 text-blue-400' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
+            >
+              <Coins className="w-4 h-4" /> Balance Log
             </button>
           </div>
 
@@ -296,6 +314,36 @@ export default function SettingsModal({ isOpen, onClose, currentSettings, onSave
                       )}
                     </div>
                   </>
+                )}
+              </div>
+            )}
+            {activeTab === 'balance' && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between bg-black/20 p-4 rounded-xl border border-white/5">
+                  <div>
+                    <h3 className="text-white font-medium">Balance History</h3>
+                    <p className="text-xs text-zinc-400 mt-1">Detailed log of your balance usage and refills.</p>
+                  </div>
+                </div>
+                {settings.balanceLogs.length === 0 ? (
+                  <p className="text-sm text-zinc-500 italic text-center py-8">No balance history available.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {[...settings.balanceLogs].sort((a, b) => b.timestamp - a.timestamp).map(log => (
+                      <div key={log.id} className="bg-black/40 border border-white/10 rounded-lg p-3 flex items-center justify-between gap-3">
+                        <div className="flex-1">
+                          <p className="text-sm text-zinc-200 font-medium">{log.description}</p>
+                          <p className="text-xs text-zinc-500">{new Date(log.timestamp).toLocaleString()}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className={`text-sm font-mono font-medium ${log.amount >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {log.amount >= 0 ? '+' : ''}{log.amount.toFixed(4)}
+                          </p>
+                          <p className="text-xs text-zinc-500 font-mono">Bal: {log.balanceAfter.toFixed(4)}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             )}

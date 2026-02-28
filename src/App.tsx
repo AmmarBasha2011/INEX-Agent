@@ -5,7 +5,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, Type, FunctionDeclaration } from '@google/genai';
-import { Send, Menu, Plus, MessageSquare, X, Activity, Clock, Coins, ChevronDown, Bot, Zap, Timer, Copy, Download, Brain, Flame, Rocket, Sparkles, Check, RefreshCw, AlertTriangle, CheckCheck, Loader2, Calculator, Wrench, Square, Paperclip, FileText, XCircle, Globe, Settings as SettingsIcon, Pin, Edit2, Trash2, Image as ImageIcon, Mic, MoreVertical, Folder } from 'lucide-react';
+import { Send, Menu, Plus, MessageSquare, X, Activity, Clock, Coins, ChevronDown, Bot, Zap, Timer, Copy, Download, Brain, Flame, Rocket, Sparkles, Check, RefreshCw, AlertTriangle, CheckCheck, Loader2, Calculator, Wrench, Square, Paperclip, FileText, XCircle, Globe, Settings as SettingsIcon, Pin, Edit2, Trash2, Image as ImageIcon, Mic, MoreVertical, Folder, Key } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import SettingsModal, { Settings, loadSettings, saveSettings } from './SettingsModal';
@@ -96,8 +96,38 @@ export default function App() {
   };
   const [balance, setBalance] = useState<number>(() => {
     const saved = localStorage.getItem('inex_balance');
-    return saved ? parseFloat(saved) : 2.0000;
+    return saved ? parseFloat(saved) : 5.0000;
   });
+  const [showAddFunds, setShowAddFunds] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState(5);
+  const [settingsTab, setSettingsTab] = useState<'profile' | 'keys' | 'memory' | 'balance'>('profile');
+
+  const logBalanceChange = (amount: number, description: string) => {
+    setBalance(prev => {
+      const newBalance = Math.max(0, prev + amount);
+      localStorage.setItem('inex_balance', newBalance.toString());
+      
+      const newLog = {
+        id: Math.random().toString(36).substr(2, 9),
+        timestamp: Date.now(),
+        amount: amount,
+        description: description,
+        balanceAfter: newBalance
+      };
+      
+      const currentSettings = settingsRef.current; // Use ref to get latest settings
+      const newSettings = { 
+        ...currentSettings, 
+        balanceLogs: [...(currentSettings.balanceLogs || []), newLog] 
+      };
+      
+      setSettings(newSettings);
+      saveSettings(newSettings);
+      
+      return newBalance;
+    });
+  };
   const [conversations, setConversations] = useState<Conversation[]>(() => {
     const saved = localStorage.getItem('inex_conversations');
     return saved ? JSON.parse(saved) : [];
@@ -298,6 +328,21 @@ export default function App() {
     let costToAdd = 0;
     const currentFiles = filesRef.current;
     const currentSettings = settingsRef.current;
+    
+    // Check balance before execution if no API keys are present
+    const hasRelevantKey = 
+      (call.name === 'webSearch' && currentSettings.apiKeys.search[0]) ||
+      (call.name === 'generateImage' && currentSettings.apiKeys.image[0]) ||
+      (call.name === 'generateAudio' && currentSettings.apiKeys.audio[0]) ||
+      (['createFile', 'createFolder', 'deleteNode', 'readFile', 'editFile', 'renameNode', 'listFiles', 'saveMemory', 'updateMemory', 'deleteMemory', 'calculator'].includes(call.name) && false); // These always cost system balance if we charge for them, or free? Code implies they cost.
+
+    // If we assume system tools cost money (as per existing code), we check balance.
+    // Existing code: if (['createFile'...].includes(call.name)) costToAdd = ...
+    
+    if (balance <= 0 && !hasRelevantKey) {
+      setShowAddFunds(true);
+      return { result: "Operation cancelled: Insufficient balance.", costToAdd: 0, inputTokens: 0, outputTokens: 0, totalToolTokens: 0 };
+    }
 
     try {
       if (call.name === 'calculator') {
@@ -532,13 +577,18 @@ export default function App() {
     }
 
     if (costToAdd > 0) {
-      setBalance(prev => Math.max(0, prev - costToAdd));
+      logBalanceChange(-costToAdd, `Tool Usage: ${call.name}`);
     }
 
     return { result, costToAdd, inputTokens, outputTokens, totalToolTokens };
   };
 
   const runAI = async (convId: string, history: Message[]) => {
+    if (!settings.apiKeys.text[0] && balance <= 0) {
+      setShowAddFunds(true);
+      return;
+    }
+
     setIsLoading(true);
     abortControllerRef.current = new AbortController();
     
@@ -815,7 +865,9 @@ export default function App() {
       const cost = (pTokens * (selectedLevelObj.inPrice / 1000000)) + (cTokens * (selectedLevelObj.outPrice / 1000000));
       const finalCost = settings.apiKeys.text[0] ? 0 : cost * 1.1; // Add 10%
 
-      setBalance(prev => Math.max(0, prev - finalCost));
+      if (finalCost > 0) {
+        logBalanceChange(-finalCost, `AI Response (${selectedLevelObj.name})`);
+      }
 
       setConversations(prev => prev.map(c => {
         if (c.id === convId) {
@@ -1339,7 +1391,128 @@ export default function App() {
         onClose={() => setShowSettings(false)} 
         currentSettings={settings} 
         onSave={(s) => { setSettings(s); saveSettings(s); }} 
+        initialTab={settingsTab}
       />
+
+      {showAddFunds && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowAddFunds(false)} />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="relative w-full max-w-md bg-zinc-950 border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+          >
+            <div className="p-6 text-center space-y-4">
+              <div className="w-12 h-12 bg-red-500/10 rounded-full flex items-center justify-center mx-auto border border-red-500/20">
+                <AlertTriangle className="w-6 h-6 text-red-400" />
+              </div>
+              <h2 className="text-xl font-bold text-white">Insufficient Balance</h2>
+              <p className="text-zinc-400 text-sm">
+                Your balance has run out. To continue using the AI, please add funds or configure your own API keys.
+              </p>
+              
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <button 
+                  onClick={() => {
+                    setShowAddFunds(false);
+                    setSettingsTab('keys');
+                    setShowSettings(true);
+                  }}
+                  className="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-900 hover:bg-zinc-800 border border-white/10 rounded-xl transition-all group"
+                >
+                  <Key className="w-6 h-6 text-blue-400 group-hover:scale-110 transition-transform" />
+                  <span className="text-sm font-medium text-zinc-200">Use API Keys</span>
+                </button>
+                
+                <button 
+                  onClick={() => setShowPayment(true)}
+                  className="flex flex-col items-center justify-center gap-2 p-4 bg-zinc-900 hover:bg-zinc-800 border border-white/10 rounded-xl transition-all group"
+                >
+                  <Coins className="w-6 h-6 text-emerald-400 group-hover:scale-110 transition-transform" />
+                  <span className="text-sm font-medium text-zinc-200">Add Funds</span>
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {showPayment && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowPayment(false)} />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="relative w-full max-w-md bg-zinc-950 border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+          >
+            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Coins className="w-5 h-5 text-emerald-400" /> Add Funds
+              </h2>
+              <button onClick={() => setShowPayment(false)} className="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-zinc-400 mb-2">Amount to Add ($)</label>
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  {[5, 10, 20].map(amt => (
+                    <button
+                      key={amt}
+                      onClick={() => setPaymentAmount(amt)}
+                      className={`py-2 px-3 rounded-lg text-sm font-medium border transition-colors ${paymentAmount === amt ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-black/40 border-white/10 text-zinc-400 hover:bg-white/5'}`}
+                    >
+                      ${amt}
+                    </button>
+                  ))}
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">$</span>
+                  <input 
+                    type="number" 
+                    value={paymentAmount}
+                    onChange={e => setPaymentAmount(parseFloat(e.target.value) || 0)}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl pl-8 pr-4 py-3 text-white focus:outline-none focus:border-emerald-500/50 font-mono text-lg"
+                    min="1"
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2 py-4 border-t border-white/10 border-b">
+                <div className="flex justify-between text-sm">
+                  <span className="text-zinc-400">Subtotal</span>
+                  <span className="text-zinc-200 font-mono">${paymentAmount.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-zinc-400">Tax (0.5%)</span>
+                  <span className="text-zinc-200 font-mono">${(paymentAmount * 0.005).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-base font-bold pt-2">
+                  <span className="text-white">Total</span>
+                  <span className="text-emerald-400 font-mono">${(paymentAmount * 1.005).toFixed(2)}</span>
+                </div>
+              </div>
+              
+              <button 
+                onClick={() => {
+                  const total = paymentAmount;
+                  logBalanceChange(total, `Refill: $${total.toFixed(2)}`);
+                  setShowPayment(false);
+                  setShowAddFunds(false);
+                  addToast(`Successfully added $${total.toFixed(2)} to balance!`, 'success');
+                }}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-medium transition-colors shadow-lg shadow-emerald-900/20 flex items-center justify-center gap-2"
+              >
+                Pay Now
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
 
       {showFileManager && (
         <FileManagerModal 
