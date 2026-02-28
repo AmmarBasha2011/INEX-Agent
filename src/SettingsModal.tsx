@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 export type Settings = {
   name: string;
   email: string;
+  birthDate: string;
   instructions: string;
   apiKeys: {
     text: string[];
@@ -17,6 +18,7 @@ export type Settings = {
 export const defaultSettings: Settings = {
   name: '',
   email: '',
+  birthDate: '',
   instructions: '',
   apiKeys: { text: [], image: [], audio: [], search: [] }
 };
@@ -139,6 +141,15 @@ export default function SettingsModal({ isOpen, onClose, currentSettings, onSave
                   />
                 </div>
                 <div>
+                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Birth Date</label>
+                  <input 
+                    type="date" 
+                    value={settings.birthDate || ''} 
+                    onChange={e => setSettings(s => ({ ...s, birthDate: e.target.value }))}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-blue-500/50 [color-scheme:dark]"
+                  />
+                </div>
+                <div>
                   <label className="block text-sm font-medium text-zinc-400 mb-1.5">Custom Instructions</label>
                   <textarea 
                     value={settings.instructions} 
@@ -157,13 +168,15 @@ export default function SettingsModal({ isOpen, onClose, currentSettings, onSave
                 </div>
 
                 {(['text', 'image', 'audio', 'search'] as const).map(type => (
-                  <div key={type} className="space-y-2">
+                  <div key={type} className="space-y-2 bg-black/20 p-4 rounded-xl border border-white/5">
                     <div className="flex items-center justify-between">
-                      <label className="block text-sm font-medium text-zinc-300 capitalize">{type} API Keys</label>
+                      <label className="block text-sm font-medium text-zinc-300 capitalize">
+                        {type === 'search' ? 'Search (SerpAPI)' : type} API Keys
+                      </label>
                       <button 
                         onClick={() => addKey(type)}
                         disabled={settings.apiKeys[type].length >= 10}
-                        className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50"
+                        className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 disabled:opacity-50 bg-blue-500/10 px-2 py-1 rounded-md transition-colors"
                       >
                         <Plus className="w-3 h-3" /> Add Key
                       </button>

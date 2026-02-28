@@ -159,9 +159,22 @@ const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
 export default function App() {
   const [settings, setSettings] = useState<Settings>(loadSettings());
   const [showSettings, setShowSettings] = useState(false);
-  const [balance, setBalance] = useState<number>(2.0000);
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [balance, setBalance] = useState<number>(() => {
+    const saved = localStorage.getItem('inex_balance');
+    return saved ? parseFloat(saved) : 2.0000;
+  });
+  const [conversations, setConversations] = useState<Conversation[]>(() => {
+    const saved = localStorage.getItem('inex_conversations');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [activeId, setActiveId] = useState<string | null>(() => {
+    return localStorage.getItem('inex_activeId') || null;
+  });
+
+  useEffect(() => { localStorage.setItem('inex_balance', balance.toString()); }, [balance]);
+  useEffect(() => { localStorage.setItem('inex_conversations', JSON.stringify(conversations)); }, [conversations]);
+  useEffect(() => { if (activeId) localStorage.setItem('inex_activeId', activeId); else localStorage.removeItem('inex_activeId'); }, [activeId]);
+
   const [selectedLevel, setSelectedLevel] = useState<string>('fast');
   const [showLevelSelector, setShowLevelSelector] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -312,8 +325,9 @@ export default function App() {
         return { role: m.role, parts };
       });
 
+      const today = new Date().toISOString().split('T')[0];
       const config: any = {
-        systemInstruction: `You are INEX Agent, an advanced AI assistant. Format your responses using markdown.\n${settings.instructions ? `User Instructions: ${settings.instructions}` : ''}\n${settings.name ? `User Name: ${settings.name}` : ''}`,
+        systemInstruction: `You are INEX Agent, an advanced AI assistant. Format your responses using markdown.\nToday's Date: ${today}\n${settings.instructions ? `User Instructions: ${settings.instructions}` : ''}\n${settings.name ? `User Name: ${settings.name}` : ''}\n${settings.email ? `User Email: ${settings.email}` : ''}\n${settings.birthDate ? `User Birth Date: ${settings.birthDate}. Calculate their current age based on today's date. If they ask for age + 5, calculate it accordingly.` : ''}`,
         tools: [{ functionDeclarations: [calculatorTool, webSearchTool, imageGenerationTool, audioGenerationTool] }]
       };
 
@@ -463,13 +477,17 @@ export default function App() {
         }));
       } else {
         console.error("Error sending message:", error);
+        let errorMsg = 'An error occurred while generating the response. Please try again or select a different model.';
+        if (error?.message?.includes('maximum number of tokens allowed') || error?.message?.includes('exceeds the maximum')) {
+          errorMsg = 'Error: The input token count exceeds the maximum allowed by this model (1,048,576 tokens). Please start a new conversation or remove some attachments.';
+        }
         setConversations(prev => prev.map(c => {
           if (c.id === convId) {
             return {
               ...c,
               messages: c.messages.map(m => m.id === modelMessageId ? { 
                 ...m, 
-                text: 'An error occurred while generating the response. Please try again or select a different model.',
+                text: errorMsg,
                 status: 'error'
               } : m)
             };
@@ -865,12 +883,12 @@ export default function App() {
             <div key={conv.id} className="group relative flex items-center">
               <button 
                 onClick={() => { setActiveId(conv.id); setSidebarOpen(false); }} 
-                className={`w-full text-left px-3 py-3 rounded-xl text-sm truncate transition-all flex items-center gap-3 pr-20 ${activeId === conv.id ? 'bg-white/10 text-white shadow-sm border border-white/10' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent active:bg-white/5'}`}
+                className={`w-full text-left px-3 py-3 rounded-xl text-sm truncate transition-all flex items-center gap-3 pr-[120px] ${activeId === conv.id ? 'bg-white/10 text-white shadow-sm border border-white/10' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent active:bg-white/5'}`}
               >
                 <MessageSquare className={`w-4 h-4 shrink-0 ${activeId === conv.id ? theme.text : 'opacity-70'}`} />
                 <span className="truncate text-[15px] md:text-sm flex-1">{conv.pinned && <Pin className="w-3 h-3 inline mr-1 text-yellow-500" />}{conv.title}</span>
               </button>
-              <div className="absolute right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-black/40 backdrop-blur-md rounded-lg p-0.5 border border-white/10">
+              <div className="absolute right-2 flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-md rounded-lg p-0.5 border border-white/10">
                 <button onClick={(e) => togglePin(conv.id, e)} className="p-1.5 text-zinc-400 hover:text-yellow-400 hover:bg-white/10 rounded-md" title="Pin"><Pin className="w-3.5 h-3.5" /></button>
                 <button onClick={(e) => editTitle(conv.id, e)} className="p-1.5 text-zinc-400 hover:text-blue-400 hover:bg-white/10 rounded-md" title="Edit"><Edit2 className="w-3.5 h-3.5" /></button>
                 <button onClick={(e) => exportConv(conv.id, e)} className="p-1.5 text-zinc-400 hover:text-emerald-400 hover:bg-white/10 rounded-md" title="Export"><Download className="w-3.5 h-3.5" /></button>
