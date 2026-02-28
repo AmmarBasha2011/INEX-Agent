@@ -43,6 +43,19 @@ export const imageGenerationTool: FunctionDeclaration = {
   }
 };
 
+export const imageEditTool: FunctionDeclaration = {
+  name: 'editImage',
+  description: 'Edit an image based on a prompt. This tool uses the same models as image generation but is for modifying existing images.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      prompt: { type: Type.STRING, description: 'The prompt describing how to edit the image.' },
+      model: { type: Type.STRING, description: 'The model to use: gemini-2.5-flash-image' }
+    },
+    required: ['prompt', 'model']
+  }
+};
+
 export const audioGenerationTool: FunctionDeclaration = {
   name: 'generateAudio',
   description: 'Generate spoken audio from text. Ask the user for the text and voice (Puck, Charon, Kore, Fenrir, Zephyr) before calling this.',

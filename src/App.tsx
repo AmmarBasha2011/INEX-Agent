@@ -12,7 +12,7 @@ import SettingsModal, { Settings, loadSettings, saveSettings } from './SettingsM
 import FileManagerModal, { getFileIcon } from './FileManagerModal';
 import { MessageStatus, Attachment, Message, Conversation, FileNode } from './types';
 import { 
-  calculatorTool, webSearchTool, imageGenerationTool, audioGenerationTool, 
+  calculatorTool, webSearchTool, imageGenerationTool, imageEditTool, audioGenerationTool, 
   saveMemoryTool, updateMemoryTool, deleteMemoryTool, 
   createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool 
 } from './tools';
@@ -333,6 +333,7 @@ export default function App() {
     const hasRelevantKey = 
       (call.name === 'webSearch' && currentSettings.apiKeys.search[0]) ||
       (call.name === 'generateImage' && currentSettings.apiKeys.image[0]) ||
+      (call.name === 'editImage' && currentSettings.apiKeys.image[0]) ||
       (call.name === 'generateAudio' && currentSettings.apiKeys.audio[0]) ||
       (['createFile', 'createFolder', 'deleteNode', 'readFile', 'editFile', 'renameNode', 'listFiles', 'saveMemory', 'updateMemory', 'deleteMemory', 'calculator'].includes(call.name) && false); // These always cost system balance if we charge for them, or free? Code implies they cost.
 
@@ -376,6 +377,54 @@ export default function App() {
           result = { imageBase64: base64Image };
         } else {
           result = "Failed to generate image.";
+        }
+      } else if (call.name === 'editImage') {
+        // Find the last user image in the conversation history
+        let lastImageBase64 = '';
+        let lastImageMime = '';
+        
+        // Look in attachments first (most recent first)
+        const currentConv = conversations.find(c => c.id === activeId);
+        if (currentConv) {
+          for (let i = currentConv.messages.length - 1; i >= 0; i--) {
+            const msg = currentConv.messages[i];
+            if (msg.role === 'user' && msg.attachments && msg.attachments.length > 0) {
+              const imgAtt = msg.attachments.find(a => a.mimeType?.startsWith('image/'));
+              if (imgAtt && imgAtt.base64) {
+                lastImageBase64 = imgAtt.base64;
+                lastImageMime = imgAtt.mimeType || 'image/jpeg';
+                break;
+              }
+            }
+          }
+        }
+
+        if (!lastImageBase64) {
+          result = "No image found in conversation history to edit. Please upload an image first.";
+        } else {
+          const imageAi = new GoogleGenAI({ apiKey: currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY });
+          const res = await imageAi.models.generateContent({
+            model: call.args.model || 'gemini-2.5-flash-image',
+            contents: {
+              parts: [
+                { inlineData: { data: lastImageBase64, mimeType: lastImageMime } },
+                { text: call.args.prompt }
+              ]
+            }
+          });
+          
+          let base64Image = '';
+          for (const part of res.candidates?.[0]?.content?.parts || []) {
+            if (part.inlineData) {
+              base64Image = part.inlineData.data;
+              break;
+            }
+          }
+          if (base64Image) {
+            result = { imageBase64: base64Image };
+          } else {
+            result = "Failed to edit image.";
+          }
         }
       } else if (call.name === 'generateAudio') {
         const audioAi = new GoogleGenAI({ apiKey: currentSettings.apiKeys.audio[0] || process.env.GEMINI_API_KEY });
@@ -566,6 +615,14 @@ export default function App() {
       const baseCost = call.args.model === 'gemini-3.1-flash-image-preview' ? 0.06 : 0.06;
       costToAdd = (baseCost + totalTokenCost) * 1.1;
       if (currentSettings.apiKeys.image[0]) costToAdd = totalTokenCost * 1.1;
+    } else if (call.name === 'editImage') {
+      const baseCost = 0.06; // Base cost for image gen
+      // User requested +10% cost more than standard image gen tool
+      // Standard tool markup is 1.1x. 
+      // So if standard is (base + tokens) * 1.1
+      // Edit tool should be (base + tokens) * 1.1 * 1.1 = (base + tokens) * 1.21
+      costToAdd = (baseCost + totalTokenCost) * 1.21;
+      if (currentSettings.apiKeys.image[0]) costToAdd = totalTokenCost * 1.1;
     } else if (call.name === 'generateAudio') {
       const wordCount = call.args.text ? call.args.text.trim().split(/\s+/).length : 0;
       costToAdd = (0.01 + totalTokenCost + (wordCount * 0.005)) * 1.1;
@@ -655,7 +712,7 @@ export default function App() {
         settings.preferences.forEach(p => { sysInst += `- ${p}\n`; });
       }
 
-      const activeTools = [calculatorTool, webSearchTool, imageGenerationTool, audioGenerationTool, createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool];
+      const activeTools = [calculatorTool, webSearchTool, imageGenerationTool, imageEditTool, audioGenerationTool, createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool];
       if (settings.memoryEnabled) {
         activeTools.push(saveMemoryTool, updateMemoryTool, deleteMemoryTool);
       }
@@ -1067,7 +1124,7 @@ export default function App() {
         settings.preferences.forEach(p => { sysInst += `- ${p}\n`; });
       }
 
-      const activeTools = [calculatorTool, webSearchTool, imageGenerationTool, audioGenerationTool, createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool];
+      const activeTools = [calculatorTool, webSearchTool, imageGenerationTool, imageEditTool, audioGenerationTool, createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool];
       if (settings.memoryEnabled) {
         activeTools.push(saveMemoryTool, updateMemoryTool, deleteMemoryTool);
       }
