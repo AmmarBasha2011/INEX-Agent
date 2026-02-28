@@ -99,18 +99,18 @@ export default function SettingsModal({ isOpen, onClose, currentSettings, onSave
           </button>
         </div>
 
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-col md:flex-row flex-1 overflow-hidden">
           {/* Tabs */}
-          <div className="w-48 border-r border-white/10 bg-black/20 p-2 flex flex-col gap-1">
+          <div className="w-full md:w-48 border-b md:border-b-0 md:border-r border-white/10 bg-black/20 p-2 flex flex-row md:flex-col gap-1 overflow-x-auto shrink-0 custom-scrollbar">
             <button 
               onClick={() => setActiveTab('profile')}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'profile' ? 'bg-blue-600/20 text-blue-400' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
+              className={`whitespace-nowrap flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'profile' ? 'bg-blue-600/20 text-blue-400' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
             >
               <User className="w-4 h-4" /> Profile
             </button>
             <button 
               onClick={() => setActiveTab('keys')}
-              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'keys' ? 'bg-blue-600/20 text-blue-400' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
+              className={`whitespace-nowrap flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'keys' ? 'bg-blue-600/20 text-blue-400' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
             >
               <Key className="w-4 h-4" /> API Keys
             </button>

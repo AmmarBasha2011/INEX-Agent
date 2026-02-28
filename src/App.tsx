@@ -296,22 +296,13 @@ export default function App() {
         if (m.role === 'model' && m.pendingToolCall) {
           return {
             role: 'model',
-            parts: [
-              ...(m.text ? [{ text: m.text }] : []),
-              { functionCall: { id: m.pendingToolCall.id, name: m.pendingToolCall.name, args: m.pendingToolCall.args } }
-            ]
+            parts: [{ text: m.text ? m.text : `[Action: Calling tool ${m.pendingToolCall.name}]` }]
           };
         }
         if (m.role === 'function' && m.toolResult) {
           return {
-            role: 'user', // API expects functionResponse to be from 'user' role
-            parts: [{
-              functionResponse: {
-                id: m.toolResult.id,
-                name: m.toolResult.name,
-                response: { result: m.toolResult.result }
-              }
-            }]
+            role: 'user',
+            parts: [{ text: `[Tool Response from ${m.toolResult.name}]:\n${typeof m.toolResult.result === 'string' ? m.toolResult.result : JSON.stringify(m.toolResult.result)}` }]
           };
         }
         
@@ -516,11 +507,15 @@ export default function App() {
     const timestamp = Date.now();
     const userMessageId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    const messageAttachments = attachments.map(a => ({
-      name: a.file.name,
-      mimeType: a.mimeType || 'application/octet-stream',
-      base64: a.base64!
-    }));
+    const messageAttachments = attachments.map(a => {
+      let mime = a.mimeType || 'application/octet-stream';
+      if (mime === 'application/json' || mime.includes('json')) mime = 'text/plain';
+      return {
+        name: a.file.name,
+        mimeType: mime,
+        base64: a.base64!
+      };
+    });
 
     const userMessage: Message = { 
       id: userMessageId, 
@@ -608,7 +603,8 @@ export default function App() {
         }
         if (base64Image) {
           result = { imageBase64: base64Image };
-          if (!settings.apiKeys.image[0]) costToAdd += 0.05 * 1.1;
+          const baseCost = call.args.model === 'gemini-3.1-flash-image-preview' ? 0.06 : 0.03;
+          if (!settings.apiKeys.image[0]) costToAdd += baseCost * 1.1;
         } else {
           result = "Failed to generate image.";
         }
@@ -628,7 +624,49 @@ export default function App() {
         });
         const base64Audio = res.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
         if (base64Audio) {
-          result = { audioBase64: base64Audio };
+          try {
+            // Convert raw PCM to WAV
+            const binaryStr = atob(base64Audio);
+            const len = binaryStr.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) bytes[i] = binaryStr.charCodeAt(i);
+            
+            const pcm16 = new Int16Array(bytes.buffer);
+            const wavHeader = new ArrayBuffer(44);
+            const view = new DataView(wavHeader);
+            
+            const writeString = (offset: number, string: string) => {
+              for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
+            };
+            
+            writeString(0, 'RIFF');
+            view.setUint32(4, 36 + pcm16.length * 2, true);
+            writeString(8, 'WAVE');
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true);
+            view.setUint16(20, 1, true);
+            view.setUint16(22, 1, true); // 1 channel
+            view.setUint32(24, 24000, true); // sample rate
+            view.setUint32(28, 24000 * 2, true); // byte rate
+            view.setUint16(32, 2, true); // block align
+            view.setUint16(34, 16, true); // bits per sample
+            writeString(36, 'data');
+            view.setUint32(40, pcm16.length * 2, true);
+            
+            const wavBytes = new Uint8Array(44 + pcm16.length * 2);
+            wavBytes.set(new Uint8Array(wavHeader), 0);
+            wavBytes.set(new Uint8Array(pcm16.buffer), 44);
+            
+            let binary = '';
+            for (let i = 0; i < wavBytes.byteLength; i++) {
+              binary += String.fromCharCode(wavBytes[i]);
+            }
+            const wavBase64 = btoa(binary);
+            result = { audioBase64: wavBase64 };
+          } catch (err) {
+            console.error("Failed to convert PCM to WAV", err);
+            result = { audioBase64: base64Audio }; // fallback
+          }
           if (!settings.apiKeys.audio[0]) costToAdd += 0.02 * 1.1;
         } else {
           result = "Failed to generate audio.";
