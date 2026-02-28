@@ -319,9 +319,17 @@ export default function App() {
           };
         }
         if (m.role === 'function' && m.toolResult) {
+          let resultText = '';
+          if (m.toolResult.result?.audioBase64) {
+            resultText = '[Audio Generated Successfully]';
+          } else if (m.toolResult.result?.imageBase64) {
+            resultText = '[Image Generated Successfully]';
+          } else {
+            resultText = typeof m.toolResult.result === 'string' ? m.toolResult.result : JSON.stringify(m.toolResult.result);
+          }
           return {
             role: 'user',
-            parts: [{ text: `[Tool Response from ${m.toolResult.name}]:\n${typeof m.toolResult.result === 'string' ? m.toolResult.result : JSON.stringify(m.toolResult.result)}` }]
+            parts: [{ text: `[Tool Response from ${m.toolResult.name}]:\n${resultText}` }]
           };
         }
         
@@ -339,12 +347,16 @@ export default function App() {
       let sysInst = `You are INEX Agent, an advanced AI assistant. Format your responses using markdown.\nToday's Date: ${today}\n`;
       if (settings.name) sysInst += `User Name: ${settings.name}\n`;
       if (settings.email) sysInst += `User Email: ${settings.email}\n`;
+      if (settings.phoneNumber) sysInst += `User Phone Number: ${settings.phoneNumber}\n`;
       if (settings.birthDate) sysInst += `User Birth Date: ${settings.birthDate}. Calculate their current age based on today's date. If they ask for age + 5, calculate it accordingly.\n`;
       if (settings.instructions) sysInst += `User Instructions: ${settings.instructions}\n`;
       
-      if (settings.memoryEnabled && settings.memories && settings.memories.length > 0) {
-        sysInst += `\nUser Memories (You can use tools to add/update/delete these):\n`;
-        settings.memories.forEach(m => { sysInst += `- [ID: ${m.id}] ${m.content}\n`; });
+      if (settings.memoryEnabled) {
+        sysInst += `\nCRITICAL INSTRUCTION FOR MEMORY: You MUST automatically use the 'saveMemory' tool to save any new personal facts, preferences, phone numbers, or details the user mentions about themselves. Do this proactively without asking for permission.\n`;
+        if (settings.memories && settings.memories.length > 0) {
+          sysInst += `\nUser Memories (You can use tools to add/update/delete these):\n`;
+          settings.memories.forEach(m => { sysInst += `- [ID: ${m.id}] ${m.content}\n`; });
+        }
       }
       if (settings.preferences && settings.preferences.length > 0) {
         sysInst += `\nUser Communication Preferences:\n`;
@@ -591,7 +603,132 @@ export default function App() {
       } : c));
     }, 300);
 
-    await runAI(activeId, updatedMessages);
+    const userMsgCount = updatedMessages.filter(m => m.role === 'user').length;
+    const isABTest = userMsgCount > 0 && userMsgCount % 10 === 0;
+
+    if (isABTest) {
+      await runABTest(activeId, updatedMessages);
+    } else {
+      await runAI(activeId, updatedMessages);
+    }
+  };
+
+  const runABTest = async (convId: string, history: Message[]) => {
+    setIsLoading(true);
+    const modelMessageId = `model-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    setConversations(prev => prev.map(c => {
+      if (c.id === convId) {
+        return {
+          ...c,
+          updatedAt: Date.now(),
+          messages: [...c.messages, { id: modelMessageId, role: 'model', text: '', status: 'processing', timestamp: Date.now() }]
+        };
+      }
+      return c;
+    }));
+
+    try {
+      const contents = history.map(m => {
+        if (m.role === 'model' && m.pendingToolCall) {
+          return {
+            role: 'model',
+            parts: [{ text: m.text ? m.text : `[Action: Calling tool ${m.pendingToolCall.name}]` }]
+          };
+        }
+        if (m.role === 'function' && m.toolResult) {
+          let resultText = '';
+          if (m.toolResult.result?.audioBase64) {
+            resultText = '[Audio Generated Successfully]';
+          } else if (m.toolResult.result?.imageBase64) {
+            resultText = '[Image Generated Successfully]';
+          } else {
+            resultText = typeof m.toolResult.result === 'string' ? m.toolResult.result : JSON.stringify(m.toolResult.result);
+          }
+          return {
+            role: 'user',
+            parts: [{ text: `[Tool Response from ${m.toolResult.name}]:\n${resultText}` }]
+          };
+        }
+        
+        const parts: any[] = [];
+        if (m.text) parts.push({ text: m.text });
+        if (m.attachments) {
+          m.attachments.forEach(att => {
+            parts.push({ inlineData: { data: att.base64, mimeType: att.mimeType } });
+          });
+        }
+        return { role: m.role, parts };
+      });
+
+      const selectedLevelObj = AI_LEVELS.find(l => l.id === selectedLevel) || AI_LEVELS[0];
+      const today = new Date().toISOString().split('T')[0];
+      
+      let sysInst = `You are INEX Agent, an advanced AI assistant. Format your responses using markdown.\nToday's Date: ${today}\n`;
+      if (settings.name) sysInst += `User Name: ${settings.name}\n`;
+      if (settings.email) sysInst += `User Email: ${settings.email}\n`;
+      if (settings.phoneNumber) sysInst += `User Phone Number: ${settings.phoneNumber}\n`;
+      if (settings.birthDate) sysInst += `User Birth Date: ${settings.birthDate}. Calculate their current age based on today's date. If they ask for age + 5, calculate it accordingly.\n`;
+      if (settings.instructions) sysInst += `User Instructions: ${settings.instructions}\n`;
+      
+      if (settings.memoryEnabled) {
+        sysInst += `\nCRITICAL INSTRUCTION FOR MEMORY: You MUST automatically use the 'saveMemory' tool to save any new personal facts, preferences, phone numbers, or details the user mentions about themselves. Do this proactively without asking for permission.\n`;
+        if (settings.memories && settings.memories.length > 0) {
+          sysInst += `\nUser Memories:\n`;
+          settings.memories.forEach(m => { sysInst += `- [ID: ${m.id}] ${m.content}\n`; });
+        }
+      }
+      if (settings.preferences && settings.preferences.length > 0) {
+        sysInst += `\nUser Communication Preferences:\n`;
+        settings.preferences.forEach(p => { sysInst += `- ${p}\n`; });
+      }
+
+      const configA = { systemInstruction: sysInst + "\n\nRespond with a highly concise, analytical, and direct tone.", tools: [] };
+      const configB = { systemInstruction: sysInst + "\n\nRespond with a warm, creative, and highly detailed tone.", tools: [] };
+
+      const aiInstance = settings.apiKeys.text[0] ? new GoogleGenAI({ apiKey: settings.apiKeys.text[0] }) : ai;
+
+      const [resA, resB] = await Promise.all([
+        aiInstance.models.generateContent({ model: selectedLevelObj.model, contents, config: configA }),
+        aiInstance.models.generateContent({ model: selectedLevelObj.model, contents, config: configB })
+      ]);
+
+      setConversations(prev => prev.map(c => c.id === convId ? {
+        ...c,
+        messages: c.messages.map(m => m.id === modelMessageId ? {
+          ...m,
+          status: 'waiting_variant_selection',
+          variants: [
+            { id: 'A', text: resA.text || 'No response', tone: 'Concise & Analytical' },
+            { id: 'B', text: resB.text || 'No response', tone: 'Warm & Detailed' }
+          ]
+        } : m)
+      } : c));
+    } catch (error) {
+      console.error("A/B Test Error:", error);
+      setConversations(prev => prev.map(c => c.id === convId ? {
+        ...c,
+        messages: c.messages.map(m => m.id === modelMessageId ? { ...m, text: 'Error generating variants.', status: 'error' } : m)
+      } : c));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSelectVariant = (msgId: string, variant: { id: string, text: string, tone: string }) => {
+    const newSettings = { ...settings, preferences: [...(settings.preferences || []), `User prefers ${variant.tone} tone.`] };
+    setSettings(newSettings);
+    saveSettings(newSettings);
+    
+    setConversations(prev => prev.map(c => c.id === activeId ? {
+      ...c,
+      messages: c.messages.map(m => m.id === msgId ? {
+        ...m,
+        text: variant.text,
+        status: 'done',
+        variants: undefined
+      } : m)
+    } : c));
   };
 
   const handleApproveTool = async (convId: string, msgId: string) => {
@@ -697,8 +834,9 @@ export default function App() {
             wavBytes.set(new Uint8Array(pcm16.buffer), 44);
             
             let binary = '';
-            for (let i = 0; i < wavBytes.byteLength; i++) {
-              binary += String.fromCharCode(wavBytes[i]);
+            const CHUNK_SIZE = 0x8000;
+            for (let i = 0; i < wavBytes.length; i += CHUNK_SIZE) {
+              binary += String.fromCharCode.apply(null, wavBytes.subarray(i, i + CHUNK_SIZE) as any);
             }
             const wavBase64 = btoa(binary);
             result = { audioBase64: wavBase64 };
@@ -834,6 +972,11 @@ export default function App() {
       return (
         <div className="mt-2 rounded-xl overflow-hidden border border-white/10 bg-black/20 backdrop-blur-md p-3">
           <audio controls src={`data:audio/wav;base64,${result.audioBase64}`} className="w-full" />
+          <div className="mt-2 flex justify-end">
+            <a href={`data:audio/wav;base64,${result.audioBase64}`} download="generated-audio.wav" className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors active:scale-95 border border-white/10">
+              <Download className="w-3.5 h-3.5" /> Download Audio
+            </a>
+          </div>
         </div>
       );
     }

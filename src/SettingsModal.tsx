@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 export type Settings = {
   name: string;
   email: string;
+  phoneNumber: string;
   birthDate: string;
   instructions: string;
   memoryEnabled: boolean;
@@ -21,6 +22,7 @@ export type Settings = {
 export const defaultSettings: Settings = {
   name: '',
   email: '',
+  phoneNumber: '',
   birthDate: '',
   instructions: '',
   memoryEnabled: false,
@@ -156,6 +158,16 @@ export default function SettingsModal({ isOpen, onClose, currentSettings, onSave
                     onChange={e => setSettings(s => ({ ...s, email: e.target.value }))}
                     className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-blue-500/50"
                     placeholder="your@email.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Phone Number</label>
+                  <input 
+                    type="tel" 
+                    value={settings.phoneNumber || ''} 
+                    onChange={e => setSettings(s => ({ ...s, phoneNumber: e.target.value }))}
+                    className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-blue-500/50"
+                    placeholder="+1 234 567 8900"
                   />
                 </div>
                 <div>
