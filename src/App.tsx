@@ -9,7 +9,17 @@ import { Send, Menu, Plus, MessageSquare, X, Activity, Clock, Coins, ChevronDown
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import SettingsModal, { Settings, loadSettings, saveSettings } from './SettingsModal';
-import FileManagerModal from './FileManagerModal';
+import FileManagerModal, { getFileIcon } from './FileManagerModal';
+import { MessageStatus, Attachment, Message, Conversation, FileNode } from './types';
+import { 
+  calculatorTool, webSearchTool, imageGenerationTool, audioGenerationTool, 
+  saveMemoryTool, updateMemoryTool, deleteMemoryTool, 
+  createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool 
+} from './tools';
+import { 
+  initDB, saveFileToDB, getFilesFromDB, deleteFileFromDB, 
+  saveConversationToDB, getConversationsFromDB, deleteConversationFromDB 
+} from './db';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -21,167 +31,6 @@ const AI_LEVELS = [
   { id: 'extreme', name: 'Extreme', model: 'gemini-3-pro-preview', inPrice: 1.25, outPrice: 5.00, icon: Rocket, color: 'text-red-500', desc: 'Maximum capability, complex tasks', theme: { blob1: 'bg-red-600', blob2: 'bg-rose-600', blob3: 'bg-red-700', border: 'border-red-500/50', focus: 'focus-within:border-red-500/80', bg: 'bg-red-600/80', bgLight: 'bg-red-600/20', text: 'text-red-400', isDangerous: true } },
   { id: 'new', name: 'New', model: 'gemini-3.1-pro-preview', inPrice: 1.25, outPrice: 5.00, icon: Sparkles, color: 'text-emerald-400', desc: 'Latest experimental model', theme: { blob1: 'bg-emerald-600', blob2: 'bg-teal-600', blob3: 'bg-green-600', border: 'border-emerald-500/30', focus: 'focus-within:border-emerald-500/60', bg: 'bg-emerald-600/80', bgLight: 'bg-emerald-600/10', text: 'text-emerald-400', isDangerous: true } },
 ];
-
-const calculatorTool: FunctionDeclaration = {
-  name: 'calculator',
-  description: 'Evaluates a mathematical expression. Use this for any math calculations.',
-  parameters: {
-    type: Type.OBJECT,
-    properties: {
-      expression: {
-        type: Type.STRING,
-        description: 'The math expression to evaluate, e.g., "2 + 2 * 4"'
-      }
-    },
-    required: ['expression']
-  }
-};
-
-const webSearchTool: FunctionDeclaration = {
-  name: 'webSearch',
-  description: 'Search the live web for current information using SerpAPI.',
-  parameters: {
-    type: Type.OBJECT,
-    properties: {
-      query: {
-        type: Type.STRING,
-        description: 'The search query to look up on the web.'
-      }
-    },
-    required: ['query']
-  }
-};
-
-const imageGenerationTool: FunctionDeclaration = {
-  name: 'generateImage',
-  description: 'Generate an image based on a prompt. Ask the user which image model they want to use (gemini-2.5-flash-image or gemini-3.1-flash-image-preview) before calling this.',
-  parameters: {
-    type: Type.OBJECT,
-    properties: {
-      prompt: { type: Type.STRING, description: 'The image generation prompt' },
-      model: { type: Type.STRING, description: 'The model to use: gemini-2.5-flash-image or gemini-3.1-flash-image-preview' }
-    },
-    required: ['prompt', 'model']
-  }
-};
-
-const audioGenerationTool: FunctionDeclaration = {
-  name: 'generateAudio',
-  description: 'Generate spoken audio from text. Ask the user for the text and voice (Puck, Charon, Kore, Fenrir, Zephyr) before calling this.',
-  parameters: {
-    type: Type.OBJECT,
-    properties: {
-      text: { type: Type.STRING, description: 'The text to speak' },
-      voice: { type: Type.STRING, description: 'The voice to use: Puck, Charon, Kore, Fenrir, or Zephyr' }
-    },
-    required: ['text', 'voice']
-  }
-};
-
-const saveMemoryTool: FunctionDeclaration = {
-  name: 'saveMemory',
-  description: 'Save a new memory or fact about the user.',
-  parameters: { type: Type.OBJECT, properties: { content: { type: Type.STRING, description: 'The information to remember' } }, required: ['content'] }
-};
-
-const updateMemoryTool: FunctionDeclaration = {
-  name: 'updateMemory',
-  description: 'Update an existing memory.',
-  parameters: { type: Type.OBJECT, properties: { id: { type: Type.STRING }, content: { type: Type.STRING } }, required: ['id', 'content'] }
-};
-
-const deleteMemoryTool: FunctionDeclaration = {
-  name: 'deleteMemory',
-  description: 'Delete a memory.',
-  parameters: { type: Type.OBJECT, properties: { id: { type: Type.STRING } }, required: ['id'] }
-};
-
-const createFileTool: FunctionDeclaration = {
-  name: 'createFile',
-  description: 'Create a new text file in the File Manager.',
-  parameters: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, parentId: { type: Type.STRING, description: 'ID of the parent folder, or empty string for root' }, content: { type: Type.STRING } }, required: ['name', 'content'] }
-};
-
-const createFolderTool: FunctionDeclaration = {
-  name: 'createFolder',
-  description: 'Create a new folder in the File Manager.',
-  parameters: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, parentId: { type: Type.STRING, description: 'ID of the parent folder, or empty string for root' } }, required: ['name'] }
-};
-
-const deleteNodeTool: FunctionDeclaration = {
-  name: 'deleteNode',
-  description: 'Delete a file or folder by ID from the File Manager.',
-  parameters: { type: Type.OBJECT, properties: { id: { type: Type.STRING } }, required: ['id'] }
-};
-
-const readFileTool: FunctionDeclaration = {
-  name: 'readFile',
-  description: 'Read the content of a text file by ID from the File Manager.',
-  parameters: { type: Type.OBJECT, properties: { id: { type: Type.STRING } }, required: ['id'] }
-};
-
-const editFileTool: FunctionDeclaration = {
-  name: 'editFile',
-  description: 'Edit the content of an existing text file by ID in the File Manager.',
-  parameters: { type: Type.OBJECT, properties: { id: { type: Type.STRING }, content: { type: Type.STRING } }, required: ['id', 'content'] }
-};
-
-const renameNodeTool: FunctionDeclaration = {
-  name: 'renameNode',
-  description: 'Rename a file or folder by ID in the File Manager.',
-  parameters: { type: Type.OBJECT, properties: { id: { type: Type.STRING }, newName: { type: Type.STRING } }, required: ['id', 'newName'] }
-};
-
-const listFilesTool: FunctionDeclaration = {
-  name: 'listFiles',
-  description: 'List all files and folders in a specific folder (by parentId) or root (empty string) in the File Manager.',
-  parameters: { type: Type.OBJECT, properties: { parentId: { type: Type.STRING, description: 'ID of the parent folder, or empty string for root' } } }
-};
-
-type MessageStatus = 'sending' | 'sent' | 'processing' | 'done' | 'error' | 'waiting_approval' | 'aborted' | 'waiting_variant_selection';
-
-export type FileNode = {
-  id: string;
-  name: string;
-  isFolder: boolean;
-  parentId: string | null;
-  content?: string;
-  base64?: string;
-  mimeType?: string;
-  createdAt: number;
-  updatedAt: number;
-};
-
-type Attachment = {
-  id: string;
-  file: File;
-  progress: number;
-  base64?: string;
-  mimeType?: string;
-};
-
-type Message = {
-  id: string;
-  role: 'user' | 'model' | 'function';
-  text: string;
-  timestamp: number;
-  tokens?: { prompt: number; candidates: number; total: number };
-  cost?: number;
-  duration?: number; // in milliseconds
-  status: MessageStatus;
-  pendingToolCall?: { id?: string, name: string, args: any };
-  toolResult?: { id?: string, name: string, result: any };
-  attachments?: { name: string, mimeType: string, base64: string }[];
-  variants?: { id: string, text: string, tone: string }[];
-};
-
-type Conversation = {
-  id: string;
-  title: string;
-  messages: Message[];
-  updatedAt: number;
-  pinned?: boolean;
-};
 
 const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
   const match = /language-(\w+)/.exec(className || '');
@@ -251,9 +100,57 @@ export default function App() {
   const [showFileManager, setShowFileManager] = useState(false);
 
   useEffect(() => { localStorage.setItem('inex_balance', balance.toString()); }, [balance]);
-  useEffect(() => { localStorage.setItem('inex_conversations', JSON.stringify(conversations)); }, [conversations]);
   useEffect(() => { if (activeId) localStorage.setItem('inex_activeId', activeId); else localStorage.removeItem('inex_activeId'); }, [activeId]);
-  useEffect(() => { localStorage.setItem('inex_files', JSON.stringify(files)); }, [files]);
+
+  // Load data from DB on mount
+  useEffect(() => {
+    const loadData = async () => {
+      const dbFiles = await getFilesFromDB();
+      const dbConvs = await getConversationsFromDB();
+      if (dbFiles) setFiles(dbFiles);
+      if (dbConvs) setConversations(dbConvs);
+      
+      if (dbConvs.length === 0) {
+        createNewConversation();
+      }
+    };
+    loadData();
+  }, []);
+
+  // Save active conversation to DB (debounced)
+  useEffect(() => {
+    if (!activeId) return;
+    const conv = conversations.find(c => c.id === activeId);
+    if (!conv) return;
+
+    const timeoutId = setTimeout(() => {
+      saveConversationToDB(conv);
+    }, 1000); // Debounce 1s
+
+    return () => clearTimeout(timeoutId);
+  }, [conversations, activeId]);
+
+  const handleAddFile = (file: FileNode) => {
+    setFiles(prev => [...prev, file]);
+    saveFileToDB(file);
+  };
+
+  const handleUpdateFile = (file: FileNode) => {
+    setFiles(prev => prev.map(f => f.id === file.id ? file : f));
+    saveFileToDB(file);
+  };
+
+  const handleDeleteFile = (id: string) => {
+    // Recursive delete
+    const getChildrenIds = (parentId: string): string[] => {
+      const children = files.filter(f => f.parentId === parentId);
+      return children.reduce((acc, child) => [...acc, child.id, ...getChildrenIds(child.id)], [] as string[]);
+    };
+    const idsToDelete = [id, ...getChildrenIds(id)];
+    
+    setFiles(prev => prev.filter(f => !idsToDelete.includes(f.id)));
+    idsToDelete.forEach(delId => deleteFileFromDB(delId));
+  };
 
   const [selectedLevel, setSelectedLevel] = useState<string>('fast');
   const [showLevelSelector, setShowLevelSelector] = useState(false);
@@ -272,12 +169,12 @@ export default function App() {
   const theme = selectedLevelObj.theme;
   const isDangerous = theme.isDangerous;
 
-  // Initialize first conversation if empty
-  useEffect(() => {
-    if (conversations.length === 0) {
-      createNewConversation();
-    }
-  }, []);
+  // Initialize first conversation if empty - moved to loadData
+  // useEffect(() => {
+  //   if (conversations.length === 0) {
+  //     createNewConversation();
+  //   }
+  // }, []);
 
   const createNewConversation = () => {
     const newConv: Conversation = {
@@ -314,9 +211,9 @@ export default function App() {
       return;
     }
 
-    const validFiles = files.filter(f => f.size <= 10 * 1024 * 1024);
+    const validFiles = files.filter(f => f.size <= 100 * 1024 * 1024);
     if (validFiles.length < files.length) {
-      alert('Some files exceed the 10MB limit and were skipped.');
+      alert('Some files exceed the 100MB limit and were skipped.');
     }
 
     const newAttachments = validFiles.map(file => ({
@@ -829,7 +726,6 @@ export default function App() {
         } else {
           result = data;
         }
-        if (!settings.apiKeys.search[0]) costToAdd += 0.01;
       } else if (call.name === 'generateImage') {
         const imageAi = new GoogleGenAI({ apiKey: settings.apiKeys.image[0] || process.env.GEMINI_API_KEY });
         const res = await imageAi.models.generateContent({
@@ -845,8 +741,6 @@ export default function App() {
         }
         if (base64Image) {
           result = { imageBase64: base64Image };
-          const baseCost = call.args.model === 'gemini-3.1-flash-image-preview' ? 0.06 : 0.03;
-          if (!settings.apiKeys.image[0]) costToAdd += baseCost * 1.1;
         } else {
           result = "Failed to generate image.";
         }
@@ -910,10 +804,6 @@ export default function App() {
             console.error("Failed to convert PCM to WAV", err);
             result = { audioBase64: base64Audio }; // fallback
           }
-          if (!settings.apiKeys.audio[0]) {
-            const wordCount = call.args.text.trim().split(/\s+/).length;
-            costToAdd += (wordCount * 0.005) * 1.1; // $0.005 per word + 10%
-          }
         } else {
           result = "Failed to generate audio.";
         }
@@ -951,10 +841,6 @@ export default function App() {
           result = `Memory with ID ${call.args.id} not found.`;
         }
       } else if (['createFile', 'createFolder', 'deleteNode', 'readFile', 'editFile', 'renameNode', 'listFiles'].includes(call.name)) {
-        const inputStr = JSON.stringify(call.args);
-        const tokenCost = (inputStr.length / 4) * 0.0000025;
-        costToAdd += (tokenCost + 0.001) * 1.1;
-
         if (call.name === 'createFile') {
           const newNode: FileNode = {
             id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -965,7 +851,7 @@ export default function App() {
             createdAt: Date.now(),
             updatedAt: Date.now()
           };
-          setFiles(prev => [...prev, newNode]);
+          handleAddFile(newNode);
           result = `File created successfully with ID: ${newNode.id}`;
         } else if (call.name === 'createFolder') {
           const newNode: FileNode = {
@@ -976,18 +862,12 @@ export default function App() {
             createdAt: Date.now(),
             updatedAt: Date.now()
           };
-          setFiles(prev => [...prev, newNode]);
+          handleAddFile(newNode);
           result = `Folder created successfully with ID: ${newNode.id}`;
         } else if (call.name === 'deleteNode') {
           const nodeExists = files.some(f => f.id === call.args.id);
           if (nodeExists) {
-            // Also delete children recursively
-            const getChildrenIds = (parentId: string): string[] => {
-              const children = files.filter(f => f.parentId === parentId);
-              return children.reduce((acc, child) => [...acc, child.id, ...getChildrenIds(child.id)], [] as string[]);
-            };
-            const idsToDelete = [call.args.id, ...getChildrenIds(call.args.id)];
-            setFiles(prev => prev.filter(f => !idsToDelete.includes(f.id)));
+            handleDeleteFile(call.args.id);
             result = `Node and its children deleted successfully.`;
           } else {
             result = `Node with ID ${call.args.id} not found.`;
@@ -1000,29 +880,21 @@ export default function App() {
             result = `File with ID ${call.args.id} not found or is a folder.`;
           }
         } else if (call.name === 'editFile') {
-          setFiles(prev => {
-            const newFiles = [...prev];
-            const idx = newFiles.findIndex(f => f.id === call.args.id);
-            if (idx > -1 && !newFiles[idx].isFolder) {
-              newFiles[idx] = { ...newFiles[idx], content: call.args.content, updatedAt: Date.now() };
-              result = `File ${call.args.id} edited successfully.`;
-            } else {
-              result = `File with ID ${call.args.id} not found or is a folder.`;
-            }
-            return newFiles;
-          });
+          const file = files.find(f => f.id === call.args.id);
+          if (file && !file.isFolder) {
+            handleUpdateFile({ ...file, content: call.args.content, updatedAt: Date.now() });
+            result = `File ${call.args.id} edited successfully.`;
+          } else {
+            result = `File with ID ${call.args.id} not found or is a folder.`;
+          }
         } else if (call.name === 'renameNode') {
-          setFiles(prev => {
-            const newFiles = [...prev];
-            const idx = newFiles.findIndex(f => f.id === call.args.id);
-            if (idx > -1) {
-              newFiles[idx] = { ...newFiles[idx], name: call.args.newName, updatedAt: Date.now() };
-              result = `Node ${call.args.id} renamed to ${call.args.newName}.`;
-            } else {
-              result = `Node with ID ${call.args.id} not found.`;
-            }
-            return newFiles;
-          });
+          const file = files.find(f => f.id === call.args.id);
+          if (file) {
+            handleUpdateFile({ ...file, name: call.args.newName, updatedAt: Date.now() });
+            result = `Node ${call.args.id} renamed to ${call.args.newName}.`;
+          } else {
+            result = `Node with ID ${call.args.id} not found.`;
+          }
         } else if (call.name === 'listFiles') {
           const parentId = call.args.parentId || null;
           const children = files.filter(f => f.parentId === parentId).map(f => ({ id: f.id, name: f.name, isFolder: f.isFolder }));
@@ -1033,6 +905,36 @@ export default function App() {
       }
     } catch (e) {
       result = "Error executing tool";
+    }
+
+    // Calculate flexible cost
+    const getTokenCost = (obj: any) => {
+      if (obj === undefined || obj === null) return 0;
+      const str = typeof obj === 'string' ? obj : JSON.stringify(obj);
+      return (str.length / 4) * 0.0000025;
+    };
+
+    const inputTokensCost = getTokenCost(call.args);
+    const outputTokensCost = getTokenCost(result);
+    const totalTokenCost = inputTokensCost + outputTokensCost;
+
+    if (call.name === 'webSearch') {
+      costToAdd = (0.01 + totalTokenCost) * 1.1;
+      if (settings.apiKeys.search[0]) costToAdd = totalTokenCost * 1.1;
+    } else if (call.name === 'calculator') {
+      costToAdd = totalTokenCost * 1.1;
+    } else if (call.name === 'generateImage') {
+      const baseCost = call.args.model === 'gemini-3.1-flash-image-preview' ? 0.06 : 0.06;
+      costToAdd = (baseCost + totalTokenCost) * 1.1;
+      if (settings.apiKeys.image[0]) costToAdd = totalTokenCost * 1.1;
+    } else if (call.name === 'generateAudio') {
+      const wordCount = call.args.text ? call.args.text.trim().split(/\s+/).length : 0;
+      costToAdd = (0.01 + totalTokenCost + (wordCount * 0.005)) * 1.1;
+      if (settings.apiKeys.audio[0]) costToAdd = totalTokenCost * 1.1;
+    } else if (['createFile', 'createFolder', 'deleteNode', 'readFile', 'editFile', 'renameNode', 'listFiles'].includes(call.name)) {
+      costToAdd = (totalTokenCost + 0.005) * 1.1;
+    } else if (['saveMemory', 'updateMemory', 'deleteMemory'].includes(call.name)) {
+      costToAdd = (totalTokenCost + 0.005) * 1.1;
     }
 
     if (costToAdd > 0) {
@@ -1128,8 +1030,8 @@ export default function App() {
     
     const newFile = new File([blob], file.name, { type: file.mimeType || 'text/plain' });
     
-    if (newFile.size > 10 * 1024 * 1024) {
-      alert(`File ${file.name} exceeds 10MB limit.`);
+    if (newFile.size > 100 * 1024 * 1024) {
+      alert(`File ${file.name} exceeds 100MB limit.`);
       return;
     }
 
@@ -1289,7 +1191,9 @@ export default function App() {
       {showFileManager && (
         <FileManagerModal 
           files={files} 
-          setFiles={setFiles} 
+          onAddFile={handleAddFile}
+          onUpdateFile={handleUpdateFile}
+          onDeleteFile={handleDeleteFile}
           onClose={() => setShowFileManager(false)} 
         />
       )}
@@ -1323,7 +1227,7 @@ export default function App() {
                       onClick={() => handleSelectFromFileManager(file)}
                       className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
                     >
-                      <FileText className="w-5 h-5 text-zinc-400 shrink-0" />
+                      {getFileIcon(file)}
                       <span className="text-sm font-medium text-zinc-200 truncate">{file.name}</span>
                     </button>
                   ))}
@@ -1439,11 +1343,13 @@ export default function App() {
           <div className="relative">
             <button 
               onClick={() => setShowLevelSelector(!showLevelSelector)} 
-              className={`flex items-center gap-2 border px-3 py-1.5 rounded-full text-[14px] font-medium transition-all active:scale-95 ${theme.bgLight} ${theme.border} text-zinc-200 hover:bg-white/10`}
+              className={`flex items-center gap-2.5 border px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 active:scale-95 shadow-lg hover:shadow-xl ${theme.bg} ${theme.border} text-white hover:brightness-110`}
             >
-              {React.createElement(selectedLevelObj.icon, { className: `w-4 h-4 ${theme.text}` })}
+              <div className="p-1 bg-white/20 rounded-full">
+                {React.createElement(selectedLevelObj.icon, { className: "w-3.5 h-3.5 text-white" })}
+              </div>
               <span>{selectedLevelObj.name}</span>
-              <ChevronDown className={`w-4 h-4 text-zinc-400 ml-0.5 transition-transform ${showLevelSelector ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`w-4 h-4 text-white/70 ml-1 transition-transform duration-300 ${showLevelSelector ? 'rotate-180' : ''}`} />
             </button>
 
             <AnimatePresence>
@@ -1451,31 +1357,32 @@ export default function App() {
                 <>
                   <div className="fixed inset-0 z-20" onClick={() => setShowLevelSelector(false)} />
                   <motion.div 
-                    initial={{ opacity: 0, y: -10 }} 
-                    animate={{ opacity: 1, y: 0 }} 
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute right-0 top-full mt-2 w-[280px] glass-panel rounded-2xl shadow-2xl z-30 overflow-hidden"
+                    initial={{ opacity: 0, y: -10, scale: 0.95 }} 
+                    animate={{ opacity: 1, y: 0, scale: 1 }} 
+                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    className={`absolute right-0 top-full mt-3 w-[320px] bg-[#0a0a0a]/95 backdrop-blur-xl border ${theme.border} rounded-2xl shadow-2xl z-30 overflow-hidden ring-1 ring-white/10`}
                   >
-                    <div className="p-1.5 grid grid-cols-1 gap-0.5 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                    <div className="p-2 grid grid-cols-1 gap-1 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                      <div className="px-3 py-2 text-xs font-semibold text-zinc-500 uppercase tracking-wider">Select Model</div>
                       {AI_LEVELS.map(level => {
                         const Icon = level.icon;
-                        const isLevelDangerous = level.theme.isDangerous;
+                        const isSelected = selectedLevel === level.id;
                         return (
                           <button
                             key={level.id}
                             onClick={() => { setSelectedLevel(level.id); setShowLevelSelector(false); }}
-                            className={`w-full text-left p-2.5 rounded-xl flex items-center gap-3 transition-colors ${selectedLevel === level.id ? 'bg-white/10' : 'hover:bg-white/5 active:bg-white/10'}`}
+                            className={`w-full text-left p-3 rounded-xl flex items-center gap-3 transition-all duration-200 group ${isSelected ? 'bg-white/10 border border-white/5' : 'hover:bg-white/5 border border-transparent'}`}
                           >
-                            <div className={`p-1.5 rounded-lg bg-black/40 border border-white/10 shrink-0 ${selectedLevel === level.id ? level.theme.text : 'text-zinc-400'}`}>
-                              <Icon className="w-4 h-4" />
+                            <div className={`p-2 rounded-lg ${isSelected ? level.theme.bg : 'bg-white/5 group-hover:bg-white/10'} transition-colors`}>
+                              <Icon className={`w-4 h-4 ${isSelected ? 'text-white' : level.theme.text}`} />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between">
-                                <span className={`font-medium text-[14px] ${selectedLevel === level.id ? 'text-zinc-100' : 'text-zinc-300'}`}>{level.name}</span>
-                                {selectedLevel === level.id && <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${level.theme.blob1.replace('bg-', 'bg-')}`} />}
+                              <div className="flex items-center justify-between mb-0.5">
+                                <span className={`font-medium text-sm ${isSelected ? 'text-white' : 'text-zinc-300 group-hover:text-zinc-200'}`}>{level.name}</span>
+                                {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
                               </div>
-                              <p className="text-[11px] text-zinc-400 mt-0.5 truncate">{level.desc}</p>
+                              <p className="text-[11px] text-zinc-500 group-hover:text-zinc-400 truncate">{level.desc}</p>
                             </div>
                           </button>
                         );
@@ -1532,7 +1439,11 @@ export default function App() {
                         <div className="flex flex-wrap gap-2 mb-3">
                           {msg.attachments.map((att, i) => (
                             <div key={i} className="flex items-center gap-2 bg-black/40 border border-white/10 px-2.5 py-1.5 rounded-lg text-xs">
-                              <FileText className="w-3.5 h-3.5 text-zinc-400" />
+                              {att.mimeType?.startsWith('image/') ? (
+                                <img src={`data:${att.mimeType};base64,${att.base64}`} alt={att.name} className="w-8 h-8 object-cover rounded" />
+                              ) : (
+                                <FileText className="w-3.5 h-3.5 text-zinc-400" />
+                              )}
                               <span className="truncate max-w-[150px]">{att.name}</span>
                             </div>
                           ))}
@@ -1655,7 +1566,11 @@ export default function App() {
               <div className="flex flex-wrap gap-2 mb-3 px-1">
                 {attachments.map(att => (
                   <div key={att.id} className="relative flex items-center gap-2 bg-black/40 border border-white/10 px-3 py-2 rounded-xl text-sm w-full sm:w-auto">
-                    <FileText className="w-4 h-4 text-zinc-400 shrink-0" />
+                    {att.mimeType?.startsWith('image/') && att.base64 ? (
+                      <img src={`data:${att.mimeType};base64,${att.base64}`} alt={att.file.name} className="w-8 h-8 object-cover rounded" />
+                    ) : (
+                      <FileText className="w-4 h-4 text-zinc-400 shrink-0" />
+                    )}
                     <div className="flex-1 min-w-0">
                       <div className="truncate text-zinc-200 pr-6">{att.file.name}</div>
                       <div className="w-full bg-white/10 h-1 rounded-full mt-1.5 overflow-hidden">

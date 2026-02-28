@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Folder, FileText, Trash2, Edit2, Download, Plus, ChevronRight, ArrowLeft } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { X, Folder, FileText, Trash2, Edit2, Download, Plus, ChevronRight, ArrowLeft, Image as ImageIcon, Music, Video, Code, File as FileIcon, UploadCloud } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 type FileNode = {
@@ -16,18 +16,123 @@ type FileNode = {
 
 interface FileManagerModalProps {
   files: FileNode[];
-  setFiles: React.Dispatch<React.SetStateAction<FileNode[]>>;
+  onAddFile: (file: FileNode) => void;
+  onUpdateFile: (file: FileNode) => void;
+  onDeleteFile: (id: string) => void;
   onClose: () => void;
 }
 
-export default function FileManagerModal({ files, setFiles, onClose }: FileManagerModalProps) {
+export const getFileIcon = (file: FileNode) => {
+  if (file.isFolder) return <Folder className="w-5 h-5 text-blue-400 shrink-0" />;
+  
+  const name = file.name.toLowerCase();
+  const mime = file.mimeType || '';
+  
+  if (mime.startsWith('image/') || name.match(/\.(jpg|jpeg|png|gif|webp|svg)$/)) {
+    return <ImageIcon className="w-5 h-5 text-purple-400 shrink-0" />;
+  }
+  if (mime.startsWith('audio/') || name.match(/\.(mp3|wav|ogg|m4a)$/)) {
+    return <Music className="w-5 h-5 text-yellow-400 shrink-0" />;
+  }
+  if (mime.startsWith('video/') || name.match(/\.(mp4|webm|avi|mov)$/)) {
+    return <Video className="w-5 h-5 text-red-400 shrink-0" />;
+  }
+  if (name.match(/\.(js|ts|jsx|tsx|json|html|css|py|java|c|cpp|go|rs)$/)) {
+    return <Code className="w-5 h-5 text-green-400 shrink-0" />;
+  }
+  if (name.match(/\.(txt|md|csv)$/)) {
+    return <FileText className="w-5 h-5 text-zinc-400 shrink-0" />;
+  }
+  
+  return <FileIcon className="w-5 h-5 text-zinc-400 shrink-0" />;
+};
+
+export default function FileManagerModal({ files, onAddFile, onUpdateFile, onDeleteFile, onClose }: FileManagerModalProps) {
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [editingFile, setEditingFile] = useState<FileNode | null>(null);
   const [editContent, setEditContent] = useState('');
   const [renamingNode, setRenamingNode] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Upload Progress State
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [uploadSpeed, setUploadSpeed] = useState('');
+  const [timeElapsed, setTimeElapsed] = useState('');
+  const [currentFileName, setCurrentFileName] = useState('');
 
   const currentFiles = files.filter(f => f.parentId === currentFolderId);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const uploadedFiles = Array.from(e.target.files || []);
+    if (uploadedFiles.length === 0) return;
+
+    setUploading(true);
+    setProgress(0);
+    
+    let totalSize = uploadedFiles.reduce((acc, file) => acc + file.size, 0);
+    let loadedSize = 0;
+    const startTime = Date.now();
+
+    const processNextFile = (index: number) => {
+      if (index >= uploadedFiles.length) {
+        setUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+
+      const file = uploadedFiles[index];
+      setCurrentFileName(file.name);
+      
+      const reader = new FileReader();
+      const isBinary = file.type.startsWith('image/') || file.type.startsWith('audio/') || file.type.startsWith('video/') || file.type === 'application/pdf';
+
+      reader.onprogress = (ev) => {
+        if (ev.lengthComputable) {
+          const fileLoaded = ev.loaded;
+          const currentTotalLoaded = loadedSize + fileLoaded;
+          const percent = Math.round((currentTotalLoaded / totalSize) * 100);
+          setProgress(percent);
+
+          const elapsedTime = (Date.now() - startTime) / 1000; // seconds
+          if (elapsedTime > 0) {
+            const speed = (currentTotalLoaded / 1024 / 1024) / elapsedTime; // MB/s
+            setUploadSpeed(`${speed.toFixed(2)} MB/s`);
+            setTimeElapsed(`${elapsedTime.toFixed(1)}s`);
+          }
+        }
+      };
+
+      reader.onload = (ev) => {
+        const content = ev.target?.result as string;
+        
+        const newNode: FileNode = {
+          id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          name: file.name,
+          isFolder: false,
+          parentId: currentFolderId,
+          content: isBinary ? undefined : content,
+          base64: isBinary ? content.split(',')[1] : undefined,
+          mimeType: file.type,
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        };
+        
+        onAddFile(newNode);
+        loadedSize += file.size;
+        processNextFile(index + 1);
+      };
+      
+      if (isBinary) {
+        reader.readAsDataURL(file);
+      } else {
+        reader.readAsText(file);
+      }
+    };
+
+    processNextFile(0);
+  };
 
   const getBreadcrumbs = () => {
     const crumbs = [];
@@ -55,7 +160,7 @@ export default function FileManagerModal({ files, setFiles, onClose }: FileManag
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
-    setFiles(prev => [...prev, newNode]);
+    onAddFile(newNode);
   };
 
   const handleCreateFile = () => {
@@ -70,18 +175,13 @@ export default function FileManagerModal({ files, setFiles, onClose }: FileManag
       createdAt: Date.now(),
       updatedAt: Date.now()
     };
-    setFiles(prev => [...prev, newNode]);
+    onAddFile(newNode);
   };
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm("Are you sure you want to delete this?")) return;
-    const getChildrenIds = (parentId: string): string[] => {
-      const children = files.filter(f => f.parentId === parentId);
-      return children.reduce((acc, child) => [...acc, child.id, ...getChildrenIds(child.id)], [] as string[]);
-    };
-    const idsToDelete = [id, ...getChildrenIds(id)];
-    setFiles(prev => prev.filter(f => !idsToDelete.includes(f.id)));
+    onDeleteFile(id);
   };
 
   const handleRename = (id: string, name: string, e: React.MouseEvent) => {
@@ -95,7 +195,10 @@ export default function FileManagerModal({ files, setFiles, onClose }: FileManag
       setRenamingNode(null);
       return;
     }
-    setFiles(prev => prev.map(f => f.id === id ? { ...f, name: newName.trim(), updatedAt: Date.now() } : f));
+    const file = files.find(f => f.id === id);
+    if (file) {
+      onUpdateFile({ ...file, name: newName.trim(), updatedAt: Date.now() });
+    }
     setRenamingNode(null);
   };
 
@@ -133,9 +236,11 @@ export default function FileManagerModal({ files, setFiles, onClose }: FileManag
 
   const saveFile = () => {
     if (!editingFile) return;
-    setFiles(prev => prev.map(f => f.id === editingFile.id ? { ...f, content: editContent, updatedAt: Date.now() } : f));
+    onUpdateFile({ ...editingFile, content: editContent, updatedAt: Date.now() });
     setEditingFile(null);
   };
+
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
@@ -156,6 +261,33 @@ export default function FileManagerModal({ files, setFiles, onClose }: FileManag
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {uploading && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+            <div className="bg-zinc-900 border border-white/10 p-6 rounded-2xl shadow-2xl max-w-sm w-full">
+              <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                <UploadCloud className="w-5 h-5 text-blue-400 animate-bounce" />
+                Uploading Files...
+              </h3>
+              <div className="space-y-4">
+                <div className="flex justify-between text-sm text-zinc-300">
+                  <span>{currentFileName}</span>
+                  <span>{progress}%</span>
+                </div>
+                <div className="w-full bg-white/10 h-2 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-blue-500 transition-all duration-300 ease-out" 
+                    style={{ width: `${progress}%` }} 
+                  />
+                </div>
+                <div className="flex justify-between text-xs text-zinc-500">
+                  <span>Speed: {uploadSpeed}</span>
+                  <span>Time: {timeElapsed}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {editingFile ? (
           <div className="flex flex-col flex-1 overflow-hidden">
@@ -190,6 +322,16 @@ export default function FileManagerModal({ files, setFiles, onClose }: FileManag
                 ))}
               </div>
               <div className="flex items-center gap-2">
+                <input 
+                  type="file" 
+                  multiple 
+                  className="hidden" 
+                  ref={fileInputRef} 
+                  onChange={handleFileUpload} 
+                />
+                <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 text-zinc-300 rounded-lg text-sm font-medium transition-colors border border-white/5">
+                  <UploadCloud className="w-4 h-4" /> Upload
+                </button>
                 <button onClick={handleCreateFile} className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-white/10 text-zinc-300 rounded-lg text-sm font-medium transition-colors border border-white/5">
                   <FileText className="w-4 h-4" /> New File
                 </button>
@@ -214,7 +356,7 @@ export default function FileManagerModal({ files, setFiles, onClose }: FileManag
                       className="group flex items-center justify-between p-3 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 rounded-xl cursor-pointer transition-all"
                     >
                       <div className="flex items-center gap-3 overflow-hidden">
-                        {file.isFolder ? <Folder className="w-5 h-5 text-blue-400 shrink-0" /> : <FileText className="w-5 h-5 text-zinc-400 shrink-0" />}
+                        {getFileIcon(file)}
                         {renamingNode === file.id ? (
                           <input
                             type="text"
@@ -230,7 +372,7 @@ export default function FileManagerModal({ files, setFiles, onClose }: FileManag
                           <span className="text-sm font-medium text-zinc-200 truncate">{file.name}</span>
                         )}
                       </div>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1 opacity-100 transition-opacity">
                         <button onClick={(e) => handleRename(file.id, file.name, e)} className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors" title="Rename">
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>

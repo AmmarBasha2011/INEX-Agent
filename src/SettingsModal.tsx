@@ -247,9 +247,9 @@ export default function SettingsModal({ isOpen, onClose, currentSettings, onSave
                   </div>
                   <button 
                     onClick={() => setSettings(s => ({ ...s, memoryEnabled: !s.memoryEnabled }))}
-                    className={`w-12 h-6 rounded-full transition-colors relative ${settings.memoryEnabled ? 'bg-blue-500' : 'bg-zinc-700'}`}
+                    className={`w-14 h-7 rounded-full transition-all duration-300 relative focus:outline-none focus:ring-2 focus:ring-blue-500/50 ${settings.memoryEnabled ? 'bg-blue-600 shadow-[0_0_15px_rgba(37,99,235,0.5)]' : 'bg-zinc-800 border border-white/10'}`}
                   >
-                    <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${settings.memoryEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                    <div className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white shadow-sm transition-all duration-300 ${settings.memoryEnabled ? 'translate-x-7' : 'translate-x-0'}`} />
                   </button>
                 </div>
 
