@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Key, User, Settings as SettingsIcon, Plus, Trash2 } from 'lucide-react';
+import { X, Save, Key, User, Settings as SettingsIcon, Plus, Trash2, Brain, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export type Settings = {
@@ -7,6 +7,9 @@ export type Settings = {
   email: string;
   birthDate: string;
   instructions: string;
+  memoryEnabled: boolean;
+  memories: { id: string; content: string; createdAt: number }[];
+  preferences: string[];
   apiKeys: {
     text: string[];
     image: string[];
@@ -20,6 +23,9 @@ export const defaultSettings: Settings = {
   email: '',
   birthDate: '',
   instructions: '',
+  memoryEnabled: false,
+  memories: [],
+  preferences: [],
   apiKeys: { text: [], image: [], audio: [], search: [] }
 };
 
@@ -27,7 +33,13 @@ export const loadSettings = (): Settings => {
   const saved = localStorage.getItem('inex_settings');
   if (saved) {
     try {
-      return { ...defaultSettings, ...JSON.parse(saved) };
+      const parsed = JSON.parse(saved);
+      return { 
+        ...defaultSettings, 
+        ...parsed, 
+        memories: parsed.memories || [], 
+        preferences: parsed.preferences || [] 
+      };
     } catch (e) {
       return defaultSettings;
     }
@@ -41,7 +53,7 @@ export const saveSettings = (settings: Settings) => {
 
 export default function SettingsModal({ isOpen, onClose, currentSettings, onSave }: { isOpen: boolean, onClose: () => void, currentSettings: Settings, onSave: (s: Settings) => void }) {
   const [settings, setSettings] = useState<Settings>(currentSettings);
-  const [activeTab, setActiveTab] = useState<'profile' | 'keys'>('profile');
+  const [activeTab, setActiveTab] = useState<'profile' | 'keys' | 'memory'>('profile');
 
   useEffect(() => {
     if (isOpen) {
@@ -113,6 +125,12 @@ export default function SettingsModal({ isOpen, onClose, currentSettings, onSave
               className={`whitespace-nowrap flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'keys' ? 'bg-blue-600/20 text-blue-400' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
             >
               <Key className="w-4 h-4" /> API Keys
+            </button>
+            <button 
+              onClick={() => setActiveTab('memory')}
+              className={`whitespace-nowrap flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${activeTab === 'memory' ? 'bg-blue-600/20 text-blue-400' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200'}`}
+            >
+              <Brain className="w-4 h-4" /> Memory
             </button>
           </div>
 
@@ -206,6 +224,67 @@ export default function SettingsModal({ isOpen, onClose, currentSettings, onSave
                     )}
                   </div>
                 ))}
+              </div>
+            )}
+            {activeTab === 'memory' && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between bg-black/20 p-4 rounded-xl border border-white/5">
+                  <div>
+                    <h3 className="text-white font-medium">Enable Memory</h3>
+                    <p className="text-xs text-zinc-400 mt-1">Allow AI to remember facts about you across conversations.</p>
+                  </div>
+                  <button 
+                    onClick={() => setSettings(s => ({ ...s, memoryEnabled: !s.memoryEnabled }))}
+                    className={`w-12 h-6 rounded-full transition-colors relative ${settings.memoryEnabled ? 'bg-blue-500' : 'bg-zinc-700'}`}
+                  >
+                    <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${settings.memoryEnabled ? 'translate-x-6' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+
+                {settings.memoryEnabled && (
+                  <>
+                    <div className="space-y-3">
+                      <h3 className="text-sm font-medium text-zinc-300 flex items-center gap-2"><Brain className="w-4 h-4"/> Saved Memories</h3>
+                      {settings.memories.length === 0 ? (
+                        <p className="text-xs text-zinc-500 italic">No memories saved yet. The AI will add them automatically, or you can add them below.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {settings.memories.map(m => (
+                            <div key={m.id} className="bg-black/40 border border-white/10 rounded-lg p-3 flex items-start justify-between gap-3">
+                              <p className="text-sm text-zinc-200 flex-1">{m.content}</p>
+                              <button onClick={() => setSettings(s => ({ ...s, memories: s.memories.filter(x => x.id !== m.id) }))} className="text-zinc-500 hover:text-red-400 transition-colors"><Trash2 className="w-4 h-4"/></button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="flex gap-2 mt-2">
+                        <input type="text" placeholder="Add a new memory manually... (Press Enter)" className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/50" onKeyDown={(e) => {
+                          if (e.key === 'Enter' && e.currentTarget.value.trim()) {
+                            const val = e.currentTarget.value.trim();
+                            setSettings(s => ({ ...s, memories: [...s.memories, { id: Date.now().toString(), content: val, createdAt: Date.now() }] }));
+                            e.currentTarget.value = '';
+                          }
+                        }}/>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 pt-4 border-t border-white/10">
+                      <h3 className="text-sm font-medium text-zinc-300 flex items-center gap-2"><Sparkles className="w-4 h-4"/> Learned Preferences</h3>
+                      {settings.preferences.length === 0 ? (
+                        <p className="text-xs text-zinc-500 italic">No preferences learned yet. Keep chatting to trigger A/B testing.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {settings.preferences.map((p, i) => (
+                            <div key={i} className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 flex items-start justify-between gap-3">
+                              <p className="text-sm text-blue-200 flex-1">{p}</p>
+                              <button onClick={() => setSettings(s => ({ ...s, preferences: s.preferences.filter((_, idx) => idx !== i) }))} className="text-blue-500/50 hover:text-red-400 transition-colors"><Trash2 className="w-4 h-4"/></button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             )}
           </div>

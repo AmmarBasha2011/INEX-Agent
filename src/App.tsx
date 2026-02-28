@@ -77,7 +77,25 @@ const audioGenerationTool: FunctionDeclaration = {
   }
 };
 
-type MessageStatus = 'sending' | 'sent' | 'processing' | 'done' | 'error' | 'waiting_approval' | 'aborted';
+const saveMemoryTool: FunctionDeclaration = {
+  name: 'saveMemory',
+  description: 'Save a new memory or fact about the user.',
+  parameters: { type: Type.OBJECT, properties: { content: { type: Type.STRING, description: 'The information to remember' } }, required: ['content'] }
+};
+
+const updateMemoryTool: FunctionDeclaration = {
+  name: 'updateMemory',
+  description: 'Update an existing memory.',
+  parameters: { type: Type.OBJECT, properties: { id: { type: Type.STRING }, content: { type: Type.STRING } }, required: ['id', 'content'] }
+};
+
+const deleteMemoryTool: FunctionDeclaration = {
+  name: 'deleteMemory',
+  description: 'Delete a memory.',
+  parameters: { type: Type.OBJECT, properties: { id: { type: Type.STRING } }, required: ['id'] }
+};
+
+type MessageStatus = 'sending' | 'sent' | 'processing' | 'done' | 'error' | 'waiting_approval' | 'aborted' | 'waiting_variant_selection';
 
 type Attachment = {
   id: string;
@@ -99,6 +117,7 @@ type Message = {
   pendingToolCall?: { id?: string, name: string, args: any };
   toolResult?: { id?: string, name: string, result: any };
   attachments?: { name: string, mimeType: string, base64: string }[];
+  variants?: { id: string, text: string, tone: string }[];
 };
 
 type Conversation = {
@@ -317,9 +336,29 @@ export default function App() {
       });
 
       const today = new Date().toISOString().split('T')[0];
+      let sysInst = `You are INEX Agent, an advanced AI assistant. Format your responses using markdown.\nToday's Date: ${today}\n`;
+      if (settings.name) sysInst += `User Name: ${settings.name}\n`;
+      if (settings.email) sysInst += `User Email: ${settings.email}\n`;
+      if (settings.birthDate) sysInst += `User Birth Date: ${settings.birthDate}. Calculate their current age based on today's date. If they ask for age + 5, calculate it accordingly.\n`;
+      if (settings.instructions) sysInst += `User Instructions: ${settings.instructions}\n`;
+      
+      if (settings.memoryEnabled && settings.memories && settings.memories.length > 0) {
+        sysInst += `\nUser Memories (You can use tools to add/update/delete these):\n`;
+        settings.memories.forEach(m => { sysInst += `- [ID: ${m.id}] ${m.content}\n`; });
+      }
+      if (settings.preferences && settings.preferences.length > 0) {
+        sysInst += `\nUser Communication Preferences:\n`;
+        settings.preferences.forEach(p => { sysInst += `- ${p}\n`; });
+      }
+
+      const activeTools = [calculatorTool, webSearchTool, imageGenerationTool, audioGenerationTool];
+      if (settings.memoryEnabled) {
+        activeTools.push(saveMemoryTool, updateMemoryTool, deleteMemoryTool);
+      }
+
       const config: any = {
-        systemInstruction: `You are INEX Agent, an advanced AI assistant. Format your responses using markdown.\nToday's Date: ${today}\n${settings.instructions ? `User Instructions: ${settings.instructions}` : ''}\n${settings.name ? `User Name: ${settings.name}` : ''}\n${settings.email ? `User Email: ${settings.email}` : ''}\n${settings.birthDate ? `User Birth Date: ${settings.birthDate}. Calculate their current age based on today's date. If they ask for age + 5, calculate it accordingly.` : ''}`,
-        tools: [{ functionDeclarations: [calculatorTool, webSearchTool, imageGenerationTool, audioGenerationTool] }]
+        systemInstruction: sysInst,
+        tools: [{ functionDeclarations: activeTools }]
       };
 
       const aiInstance = settings.apiKeys.text[0] ? new GoogleGenAI({ apiKey: settings.apiKeys.text[0] }) : ai;
@@ -1078,9 +1117,25 @@ export default function App() {
                               )}
                             </>
                           ) : (
-                            msg.status !== 'waiting_approval' && <span className="typewriter-cursor" />
+                            msg.status !== 'waiting_approval' && msg.status !== 'waiting_variant_selection' && <span className="typewriter-cursor" />
                           )}
                           
+                          {/* A/B Testing Variants */}
+                          {msg.status === 'waiting_variant_selection' && msg.variants && (
+                            <div className="mt-4 space-y-4 w-full">
+                              <p className="text-sm text-blue-400 font-medium flex items-center gap-2"><Sparkles className="w-4 h-4"/> Help me learn! Which response is better?</p>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+                                {msg.variants.map(v => (
+                                  <div key={v.id} className="bg-black/40 border border-white/10 rounded-xl p-4 hover:border-blue-500/50 cursor-pointer transition-colors flex flex-col" onClick={() => handleSelectVariant(msg.id, v)}>
+                                    <div className="text-xs text-zinc-500 mb-2 uppercase tracking-wider font-semibold">{v.tone}</div>
+                                    <div className="markdown-body text-sm flex-1"><Markdown components={{ code: CodeBlock }}>{v.text}</Markdown></div>
+                                    <button className="mt-4 w-full py-2 bg-white/5 hover:bg-white/10 rounded-lg text-sm font-medium transition-colors border border-white/5">Select This</button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
                           {/* Tool Approval UI */}
                           {msg.pendingToolCall && msg.status === 'waiting_approval' && (
                             <div className="mt-4 p-4 rounded-xl bg-black/40 border border-white/10 backdrop-blur-md">
@@ -1141,7 +1196,7 @@ export default function App() {
                       )}
 
                       {/* Copy Button */}
-                      {msg.status !== 'error' && msg.status !== 'waiting_approval' && (
+                      {msg.status !== 'error' && msg.status !== 'waiting_approval' && msg.status !== 'waiting_variant_selection' && (
                         <button 
                           onClick={() => handleCopyMessage(msg.id, msg.text)}
                           className={`flex items-center gap-1 transition-colors active:scale-95 ml-1 ${msg.role === 'user' ? 'hover:text-white' : 'hover:text-zinc-300'}`}
