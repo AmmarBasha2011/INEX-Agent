@@ -844,9 +844,45 @@ export default function App() {
             console.error("Failed to convert PCM to WAV", err);
             result = { audioBase64: base64Audio }; // fallback
           }
-          if (!settings.apiKeys.audio[0]) costToAdd += 0.02 * 1.1;
+          if (!settings.apiKeys.audio[0]) {
+            const wordCount = call.args.text.trim().split(/\s+/).length;
+            costToAdd += (wordCount * 0.005) * 1.1; // $0.005 per word + 10%
+          }
         } else {
           result = "Failed to generate audio.";
+        }
+      } else if (call.name === 'saveMemory') {
+        const newMemory = {
+          id: `mem-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          content: call.args.content,
+          createdAt: Date.now()
+        };
+        const newSettings = { ...settings, memories: [...(settings.memories || []), newMemory] };
+        setSettings(newSettings);
+        saveSettings(newSettings);
+        result = `Memory saved successfully with ID: ${newMemory.id}`;
+      } else if (call.name === 'updateMemory') {
+        const memIndex = settings.memories.findIndex(m => m.id === call.args.id);
+        if (memIndex > -1) {
+          const updatedMemories = [...settings.memories];
+          updatedMemories[memIndex].content = call.args.content;
+          const newSettings = { ...settings, memories: updatedMemories };
+          setSettings(newSettings);
+          saveSettings(newSettings);
+          result = `Memory ${call.args.id} updated successfully.`;
+        } else {
+          result = `Memory with ID ${call.args.id} not found.`;
+        }
+      } else if (call.name === 'deleteMemory') {
+        const memIndex = settings.memories.findIndex(m => m.id === call.args.id);
+        if (memIndex > -1) {
+          const updatedMemories = settings.memories.filter(m => m.id !== call.args.id);
+          const newSettings = { ...settings, memories: updatedMemories };
+          setSettings(newSettings);
+          saveSettings(newSettings);
+          result = `Memory ${call.args.id} deleted successfully.`;
+        } else {
+          result = `Memory with ID ${call.args.id} not found.`;
         }
       } else {
         result = "Tool not supported.";
@@ -865,7 +901,7 @@ export default function App() {
       text: `Executed: ${call.name}`,
       timestamp: Date.now(),
       status: 'done',
-      toolResult: { id: call.id, name: call.name, result: result }
+      toolResult: { id: call.id, name: call.name, result: result, cost: costToAdd }
     };
 
     const updatedHistory = conv.messages.map(m => m.id === msgId ? { ...m, status: 'done' as MessageStatus } : m).concat(toolResMsg);
@@ -948,18 +984,22 @@ export default function App() {
     }
   };
 
-  const ToolOutputViewer = ({ name, result }: { name: string, result: any }) => {
+  const ToolOutputViewer = ({ name, result, cost }: { name: string, result: any, cost?: number }) => {
     const [expanded, setExpanded] = useState(false);
     let Icon = Calculator;
     if (name === 'webSearch') Icon = Globe;
     if (name === 'generateImage') Icon = ImageIcon;
     if (name === 'generateAudio') Icon = Mic;
+    if (name.includes('Memory')) Icon = Brain;
 
     if (result?.imageBase64) {
       return (
         <div className="mt-2 rounded-xl overflow-hidden border border-white/10 bg-black/20 backdrop-blur-md p-2">
           <img src={`data:image/jpeg;base64,${result.imageBase64}`} alt="Generated" className="w-full rounded-lg" />
-          <div className="mt-2 flex justify-end">
+          <div className="mt-2 flex justify-between items-center">
+            {cost !== undefined && cost > 0 ? (
+              <span className="text-xs font-medium text-zinc-400 px-2">Cost: ${cost.toFixed(4)}</span>
+            ) : <span />}
             <a href={`data:image/jpeg;base64,${result.imageBase64}`} download="generated-image.jpg" className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors active:scale-95 border border-white/10">
               <Download className="w-3.5 h-3.5" /> Download
             </a>
@@ -972,7 +1012,10 @@ export default function App() {
       return (
         <div className="mt-2 rounded-xl overflow-hidden border border-white/10 bg-black/20 backdrop-blur-md p-3">
           <audio controls src={`data:audio/wav;base64,${result.audioBase64}`} className="w-full" />
-          <div className="mt-2 flex justify-end">
+          <div className="mt-2 flex justify-between items-center">
+            {cost !== undefined && cost > 0 ? (
+              <span className="text-xs font-medium text-zinc-400 px-2">Cost: ${cost.toFixed(4)}</span>
+            ) : <span />}
             <a href={`data:audio/wav;base64,${result.audioBase64}`} download="generated-audio.wav" className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors active:scale-95 border border-white/10">
               <Download className="w-3.5 h-3.5" /> Download Audio
             </a>
@@ -987,6 +1030,11 @@ export default function App() {
           <div className="flex items-center gap-2">
             <Icon className={`w-4 h-4 ${theme.text}`} />
             <span className="capitalize">{name} output</span>
+            {cost !== undefined && cost > 0 && (
+              <span className="ml-2 px-1.5 py-0.5 rounded-md bg-white/10 text-[10px] font-mono text-zinc-400 border border-white/5">
+                ${cost.toFixed(4)}
+              </span>
+            )}
           </div>
           <motion.div animate={{ rotate: expanded ? 180 : 0 }}>
             <ChevronDown className="w-4 h-4" />
@@ -1000,7 +1048,7 @@ export default function App() {
               exit={{ height: 0, opacity: 0 }}
               className="px-3 py-2 border-t border-white/10 text-xs bg-black/40 overflow-hidden"
             >
-              <pre className="text-zinc-300 overflow-x-auto">{JSON.stringify(result, null, 2)}</pre>
+              <pre className="text-zinc-300 overflow-x-auto whitespace-pre-wrap">{typeof result === 'string' ? result : JSON.stringify(result, null, 2)}</pre>
             </motion.div>
           )}
         </AnimatePresence>
@@ -1217,7 +1265,7 @@ export default function App() {
                   return (
                     <div key={msg.id} className="flex justify-start">
                       <div className="max-w-[85%] md:max-w-[75%]">
-                        <ToolOutputViewer name={msg.toolResult?.name || 'Tool'} result={msg.toolResult?.result} />
+                        <ToolOutputViewer name={msg.toolResult?.name || 'Tool'} result={msg.toolResult?.result} cost={msg.toolResult?.cost} />
                       </div>
                     </div>
                   );
