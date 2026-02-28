@@ -5,19 +5,19 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, Type, FunctionDeclaration } from '@google/genai';
-import { Send, Menu, Plus, MessageSquare, X, Activity, Clock, Coins, ChevronDown, Bot, Zap, Timer, Copy, Download, Brain, Flame, Rocket, Sparkles, Check, RefreshCw, AlertTriangle, CheckCheck, Loader2, Calculator, Wrench } from 'lucide-react';
+import { Send, Menu, Plus, MessageSquare, X, Activity, Clock, Coins, ChevronDown, Bot, Zap, Timer, Copy, Download, Brain, Flame, Rocket, Sparkles, Check, RefreshCw, AlertTriangle, CheckCheck, Loader2, Calculator, Wrench, Square, Paperclip, FileText, XCircle, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 const AI_LEVELS = [
-  { id: 'very-fast', name: 'Very Fast', model: 'gemini-flash-lite-latest', inPrice: 0.075, outPrice: 0.30, icon: Zap, color: 'text-yellow-400', desc: 'Lowest latency, basic tasks' },
-  { id: 'fast', name: 'Fast', model: 'gemini-2.5-flash', inPrice: 0.075, outPrice: 0.30, icon: Zap, color: 'text-amber-400', desc: 'Balanced speed and capability' },
-  { id: 'medium', name: 'Medium', model: 'gemini-2.5-pro', inPrice: 1.25, outPrice: 5.00, icon: Brain, color: 'text-blue-400', desc: 'High reasoning, standard speed' },
-  { id: 'hard', name: 'Hard', model: 'gemini-3-flash-preview', inPrice: 0.075, outPrice: 0.30, icon: Flame, color: 'text-orange-400', desc: 'Advanced reasoning, fast' },
-  { id: 'extreme', name: 'Extreme', model: 'gemini-3-pro-preview', inPrice: 1.25, outPrice: 5.00, icon: Rocket, color: 'text-red-500', desc: 'Maximum capability, complex tasks' },
-  { id: 'new', name: 'New', model: 'gemini-3.1-pro-preview', inPrice: 1.25, outPrice: 5.00, icon: Sparkles, color: 'text-rose-500', desc: 'Latest experimental model' },
+  { id: 'very-fast', name: 'Very Fast', model: 'gemini-flash-lite-latest', inPrice: 0.075, outPrice: 0.30, icon: Zap, color: 'text-yellow-400', desc: 'Lowest latency, basic tasks', theme: { blob1: 'bg-yellow-500', blob2: 'bg-amber-500', blob3: 'bg-orange-500', border: 'border-yellow-500/30', focus: 'focus-within:border-yellow-500/60', bg: 'bg-yellow-600/80', bgLight: 'bg-yellow-600/10', text: 'text-yellow-400', isDangerous: false } },
+  { id: 'fast', name: 'Fast', model: 'gemini-2.5-flash', inPrice: 0.075, outPrice: 0.30, icon: Zap, color: 'text-blue-400', desc: 'Balanced speed and capability', theme: { blob1: 'bg-blue-600', blob2: 'bg-cyan-600', blob3: 'bg-sky-600', border: 'border-blue-500/30', focus: 'focus-within:border-blue-500/60', bg: 'bg-blue-600/80', bgLight: 'bg-blue-600/10', text: 'text-blue-400', isDangerous: false } },
+  { id: 'medium', name: 'Medium', model: 'gemini-2.5-pro', inPrice: 1.25, outPrice: 5.00, icon: Brain, color: 'text-purple-400', desc: 'High reasoning, standard speed', theme: { blob1: 'bg-purple-600', blob2: 'bg-fuchsia-600', blob3: 'bg-indigo-600', border: 'border-purple-500/30', focus: 'focus-within:border-purple-500/60', bg: 'bg-purple-600/80', bgLight: 'bg-purple-600/10', text: 'text-purple-400', isDangerous: false } },
+  { id: 'hard', name: 'Hard', model: 'gemini-3-flash-preview', inPrice: 0.075, outPrice: 0.30, icon: Flame, color: 'text-orange-400', desc: 'Advanced reasoning, fast', theme: { blob1: 'bg-orange-600', blob2: 'bg-red-500', blob3: 'bg-amber-600', border: 'border-orange-500/30', focus: 'focus-within:border-orange-500/60', bg: 'bg-orange-600/80', bgLight: 'bg-orange-600/10', text: 'text-orange-400', isDangerous: false } },
+  { id: 'extreme', name: 'Extreme', model: 'gemini-3-pro-preview', inPrice: 1.25, outPrice: 5.00, icon: Rocket, color: 'text-red-500', desc: 'Maximum capability, complex tasks', theme: { blob1: 'bg-red-600', blob2: 'bg-rose-600', blob3: 'bg-red-700', border: 'border-red-500/50', focus: 'focus-within:border-red-500/80', bg: 'bg-red-600/80', bgLight: 'bg-red-600/20', text: 'text-red-400', isDangerous: true } },
+  { id: 'new', name: 'New', model: 'gemini-3.1-pro-preview', inPrice: 1.25, outPrice: 5.00, icon: Sparkles, color: 'text-emerald-400', desc: 'Latest experimental model', theme: { blob1: 'bg-emerald-600', blob2: 'bg-teal-600', blob3: 'bg-green-600', border: 'border-emerald-500/30', focus: 'focus-within:border-emerald-500/60', bg: 'bg-emerald-600/80', bgLight: 'bg-emerald-600/10', text: 'text-emerald-400', isDangerous: true } },
 ];
 
 const calculatorTool: FunctionDeclaration = {
@@ -35,7 +35,30 @@ const calculatorTool: FunctionDeclaration = {
   }
 };
 
-type MessageStatus = 'sending' | 'sent' | 'processing' | 'done' | 'error' | 'waiting_approval';
+const webSearchTool: FunctionDeclaration = {
+  name: 'webSearch',
+  description: 'Search the live web for current information using SerpAPI.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      query: {
+        type: Type.STRING,
+        description: 'The search query to look up on the web.'
+      }
+    },
+    required: ['query']
+  }
+};
+
+type MessageStatus = 'sending' | 'sent' | 'processing' | 'done' | 'error' | 'waiting_approval' | 'aborted';
+
+type Attachment = {
+  id: string;
+  file: File;
+  progress: number;
+  base64?: string;
+  mimeType?: string;
+};
 
 type Message = {
   id: string;
@@ -48,6 +71,7 @@ type Message = {
   status: MessageStatus;
   pendingToolCall?: { id?: string, name: string, args: any };
   toolResult?: { id?: string, name: string, result: any };
+  attachments?: { name: string, mimeType: string, base64: string }[];
 };
 
 type Conversation = {
@@ -115,10 +139,15 @@ export default function App() {
   
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
-  const isDangerous = ['extreme', 'new'].includes(selectedLevel);
+  const selectedLevelObj = AI_LEVELS.find(l => l.id === selectedLevel) || AI_LEVELS[1];
+  const theme = selectedLevelObj.theme;
+  const isDangerous = theme.isDangerous;
 
   // Initialize first conversation if empty
   useEffect(() => {
@@ -140,7 +169,6 @@ export default function App() {
   };
 
   const activeConversation = conversations.find(c => c.id === activeId);
-  const selectedLevelObj = AI_LEVELS.find(l => l.id === selectedLevel) || AI_LEVELS[1];
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -156,8 +184,60 @@ export default function App() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (attachments.length + files.length > 5) {
+      alert('Maximum 5 files allowed.');
+      return;
+    }
+
+    const validFiles = files.filter(f => f.size <= 10 * 1024 * 1024);
+    if (validFiles.length < files.length) {
+      alert('Some files exceed the 10MB limit and were skipped.');
+    }
+
+    const newAttachments = validFiles.map(file => ({
+      id: Math.random().toString(36).substr(2, 9),
+      file,
+      progress: 0
+    }));
+
+    setAttachments(prev => [...prev, ...newAttachments]);
+
+    newAttachments.forEach(att => {
+      const reader = new FileReader();
+      reader.onprogress = (ev) => {
+        if (ev.lengthComputable) {
+          const progress = Math.round((ev.loaded / ev.total) * 100);
+          setAttachments(prev => prev.map(a => a.id === att.id ? { ...a, progress } : a));
+        }
+      };
+      reader.onload = () => {
+        const base64 = (reader.result as string).split(',')[1];
+        setAttachments(prev => prev.map(a => a.id === att.id ? { ...a, progress: 100, base64, mimeType: att.file.type } : a));
+      };
+      reader.readAsDataURL(att.file);
+    });
+
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments(prev => prev.filter(a => a.id !== id));
+  };
+
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+  };
+
   const runAI = async (convId: string, history: Message[]) => {
     setIsLoading(true);
+    abortControllerRef.current = new AbortController();
+    
     const modelMessageId = `model-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const emptyModelMessage: Message = { id: modelMessageId, role: 'model', text: '', timestamp: Date.now(), status: 'processing' };
 
@@ -191,12 +271,20 @@ export default function App() {
             }]
           };
         }
-        return { role: m.role, parts: [{ text: m.text }] };
+        
+        const parts: any[] = [];
+        if (m.text) parts.push({ text: m.text });
+        if (m.attachments) {
+          m.attachments.forEach(att => {
+            parts.push({ inlineData: { data: att.base64, mimeType: att.mimeType } });
+          });
+        }
+        return { role: m.role, parts };
       });
 
       const config: any = {
         systemInstruction: "You are INEX Agent, an advanced AI assistant. Format your responses using markdown.",
-        tools: [{ functionDeclarations: [calculatorTool] }]
+        tools: [{ functionDeclarations: [calculatorTool, webSearchTool] }]
       };
 
       const stream = await ai.models.generateContentStream({
@@ -209,8 +297,14 @@ export default function App() {
       let pTokens = 0;
       let cTokens = 0;
       let functionCallFound: any = null;
+      let isAborted = false;
 
       for await (const chunk of stream) {
+        if (abortControllerRef.current?.signal.aborted) {
+          isAborted = true;
+          break;
+        }
+
         if (chunk.text) {
           currentText += chunk.text;
         }
@@ -247,6 +341,24 @@ export default function App() {
 
       const endTime = Date.now();
       const duration = endTime - startTime;
+
+      if (isAborted) {
+        setConversations(prev => prev.map(c => {
+          if (c.id === convId) {
+            return {
+              ...c,
+              messages: c.messages.map(m => m.id === modelMessageId ? { 
+                ...m, 
+                text: currentText + '\n\n*(Generation stopped by user)*',
+                status: 'aborted'
+              } : m)
+            };
+          }
+          return c;
+        }));
+        setIsLoading(false);
+        return;
+      }
 
       if (functionCallFound) {
         setConversations(prev => prev.map(c => {
@@ -301,33 +413,72 @@ export default function App() {
         return c;
       }));
 
-    } catch (error) {
-      console.error("Error sending message:", error);
-      setConversations(prev => prev.map(c => {
-        if (c.id === convId) {
-          return {
-            ...c,
-            messages: c.messages.map(m => m.id === modelMessageId ? { 
-              ...m, 
-              text: 'An error occurred while generating the response. Please try again or select a different model.',
-              status: 'error'
-            } : m)
-          };
-        }
-        return c;
-      }));
+    } catch (error: any) {
+      if (error.name === 'AbortError' || abortControllerRef.current?.signal.aborted) {
+        setConversations(prev => prev.map(c => {
+          if (c.id === convId) {
+            return {
+              ...c,
+              messages: c.messages.map(m => m.id === modelMessageId ? { 
+                ...m, 
+                text: m.text + '\n\n*(Generation stopped by user)*',
+                status: 'aborted'
+              } : m)
+            };
+          }
+          return c;
+        }));
+      } else {
+        console.error("Error sending message:", error);
+        setConversations(prev => prev.map(c => {
+          if (c.id === convId) {
+            return {
+              ...c,
+              messages: c.messages.map(m => m.id === modelMessageId ? { 
+                ...m, 
+                text: 'An error occurred while generating the response. Please try again or select a different model.',
+                status: 'error'
+              } : m)
+            };
+          }
+          return c;
+        }));
+      }
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading || !activeId) return;
+    // Only block send if input is empty AND no attachments are ready
+    const hasReadyAttachments = attachments.length > 0 && attachments.every(a => a.progress === 100);
+    if ((!input.trim() && !hasReadyAttachments) || isLoading || !activeId) return;
+
+    // Wait for all attachments to finish uploading (converting to base64)
+    if (attachments.some(a => a.progress < 100)) {
+      alert("Please wait for files to finish uploading.");
+      return;
+    }
 
     const userText = input.trim();
     const timestamp = Date.now();
     const userMessageId = `user-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const userMessage: Message = { id: userMessageId, role: 'user', text: userText, timestamp, status: 'sending' };
+    
+    const messageAttachments = attachments.map(a => ({
+      name: a.file.name,
+      mimeType: a.mimeType || 'application/octet-stream',
+      base64: a.base64!
+    }));
+
+    const userMessage: Message = { 
+      id: userMessageId, 
+      role: 'user', 
+      text: userText, 
+      timestamp, 
+      status: 'sending',
+      attachments: messageAttachments.length > 0 ? messageAttachments : undefined
+    };
 
     let currentConv = conversations.find(c => c.id === activeId);
     if (!currentConv) return;
@@ -338,10 +489,11 @@ export default function App() {
       ...c,
       messages: updatedMessages,
       updatedAt: timestamp,
-      title: c.messages.length === 0 ? userText.slice(0, 30) + (userText.length > 30 ? '...' : '') : c.title
+      title: c.messages.length === 0 ? (userText.slice(0, 30) || 'File Upload') + (userText.length > 30 ? '...' : '') : c.title
     } : c));
     
     setInput('');
+    setAttachments([]);
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
@@ -365,21 +517,40 @@ export default function App() {
 
     const call = msg.pendingToolCall;
     let result;
+    
+    // Set status to processing while tool runs
+    setConversations(prev => prev.map(c => c.id === convId ? {
+      ...c,
+      messages: c.messages.map(m => m.id === msgId ? { ...m, status: 'processing' as MessageStatus } : m)
+    } : c));
+
     try {
       if (call.name === 'calculator') {
         // Safe evaluation for basic math
         result = Function('"use strict";return (' + call.args.expression + ')')();
+      } else if (call.name === 'webSearch') {
+        const res = await fetch('/api/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: call.args.query })
+        });
+        const data = await res.json();
+        if (data.organic_results) {
+          result = data.organic_results.slice(0, 3).map((r: any) => ({ title: r.title, link: r.link, snippet: r.snippet }));
+        } else {
+          result = data;
+        }
       } else {
         result = "Tool not supported.";
       }
     } catch (e) {
-      result = "Error evaluating expression";
+      result = "Error executing tool";
     }
 
     const toolResMsg: Message = {
       id: `tool-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       role: 'function',
-      text: `Calculated: ${result}`,
+      text: `Executed: ${call.name}`,
       timestamp: Date.now(),
       status: 'done',
       toolResult: { id: call.id, name: call.name, result: result }
@@ -456,22 +627,24 @@ export default function App() {
       if (status === 'sent') return <CheckCheck className="w-3.5 h-3.5 text-blue-300" />;
       return null;
     } else {
-      if (status === 'processing') return <Loader2 className={`w-3 h-3 animate-spin ${isDangerous ? 'text-red-400' : 'text-blue-400'}`} />;
+      if (status === 'processing') return <Loader2 className={`w-3 h-3 animate-spin ${theme.text}`} />;
       if (status === 'waiting_approval') return <Clock className="w-3 h-3 text-yellow-400 animate-pulse" />;
       if (status === 'error') return <AlertTriangle className="w-3 h-3 text-red-400" />;
       if (status === 'done') return <CheckCheck className="w-3.5 h-3.5 text-emerald-500" />;
+      if (status === 'aborted') return <Square className="w-3 h-3 text-zinc-500" />;
       return null;
     }
   };
 
   const ToolOutputViewer = ({ name, result }: { name: string, result: any }) => {
     const [expanded, setExpanded] = useState(false);
+    const Icon = name === 'webSearch' ? Globe : Calculator;
     return (
       <div className="mt-2 rounded-xl overflow-hidden border border-white/10 bg-black/20 backdrop-blur-md">
         <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-zinc-300 hover:bg-white/5 transition-colors">
           <div className="flex items-center gap-2">
-            <Calculator className="w-4 h-4 text-emerald-400" />
-            <span>{name} output</span>
+            <Icon className={`w-4 h-4 ${theme.text}`} />
+            <span className="capitalize">{name} output</span>
           </div>
           <motion.div animate={{ rotate: expanded ? 180 : 0 }}>
             <ChevronDown className="w-4 h-4" />
@@ -497,10 +670,10 @@ export default function App() {
     <div className="flex h-[100dvh] w-full bg-black text-zinc-100 font-sans overflow-hidden selection:bg-blue-500/30 relative">
       
       {/* Liquid Glass Background Blobs */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
-        <div className={`absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full mix-blend-screen filter blur-[100px] opacity-30 animate-blob ${isDangerous ? 'bg-red-600' : 'bg-blue-600'}`}></div>
-        <div className={`absolute top-[20%] right-[-10%] w-[40vw] h-[40vw] rounded-full mix-blend-screen filter blur-[100px] opacity-30 animate-blob animation-delay-2000 ${isDangerous ? 'bg-orange-600' : 'bg-violet-600'}`}></div>
-        <div className={`absolute bottom-[-20%] left-[20%] w-[60vw] h-[60vw] rounded-full mix-blend-screen filter blur-[100px] opacity-30 animate-blob animation-delay-4000 ${isDangerous ? 'bg-rose-600' : 'bg-indigo-600'}`}></div>
+      <div className="fixed inset-0 overflow-hidden pointer-events-none z-0 transition-colors duration-1000">
+        <div className={`absolute top-[-10%] left-[-10%] w-[50vw] h-[50vw] rounded-full mix-blend-screen filter blur-[100px] opacity-30 animate-blob transition-colors duration-1000 ${theme.blob1}`}></div>
+        <div className={`absolute top-[20%] right-[-10%] w-[40vw] h-[40vw] rounded-full mix-blend-screen filter blur-[100px] opacity-30 animate-blob animation-delay-2000 transition-colors duration-1000 ${theme.blob2}`}></div>
+        <div className={`absolute bottom-[-20%] left-[20%] w-[60vw] h-[60vw] rounded-full mix-blend-screen filter blur-[100px] opacity-30 animate-blob animation-delay-4000 transition-colors duration-1000 ${theme.blob3}`}></div>
       </div>
 
       {/* Mobile Sidebar Overlay */}
@@ -518,7 +691,7 @@ export default function App() {
       <div className={`fixed md:relative z-50 w-[80%] max-w-[300px] md:w-72 h-full glass-panel border-r-0 border-r-white/10 flex flex-col transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
         <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0 pt-safe">
           <div className="flex items-center gap-3">
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-lg ${isDangerous ? 'bg-red-600 shadow-red-900/20' : 'bg-blue-600 shadow-blue-900/20'}`}>
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-lg transition-colors duration-500 ${theme.blob1} shadow-black/50`}>
               <Bot className="w-5 h-5 text-white" />
             </div>
             <h1 className="text-lg font-bold tracking-tight text-white">INEX Agent</h1>
@@ -545,7 +718,7 @@ export default function App() {
               onClick={() => { setActiveId(conv.id); setSidebarOpen(false); }} 
               className={`w-full text-left px-3 py-3 rounded-xl text-sm truncate transition-all flex items-center gap-3 ${activeId === conv.id ? 'bg-white/10 text-white shadow-sm border border-white/10' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent active:bg-white/5'}`}
             >
-              <MessageSquare className={`w-4 h-4 shrink-0 ${activeId === conv.id ? (isDangerous ? 'text-red-400' : 'text-blue-400') : 'opacity-70'}`} />
+              <MessageSquare className={`w-4 h-4 shrink-0 ${activeId === conv.id ? theme.text : 'opacity-70'}`} />
               <span className="truncate text-[15px] md:text-sm">{conv.title}</span>
             </button>
           ))}
@@ -565,7 +738,7 @@ export default function App() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
         {/* Header */}
-        <header className={`h-14 border-b flex items-center justify-between px-3 md:px-4 shrink-0 z-20 pt-safe ${isDangerous ? 'glass-panel-danger border-red-500/30' : 'glass-panel border-white/10'}`}>
+        <header className={`h-14 border-b flex items-center justify-between px-3 md:px-4 shrink-0 z-20 pt-safe glass-panel transition-colors duration-500 ${theme.border}`}>
           <div className="flex items-center gap-2">
             <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors active:bg-white/5">
               <Menu className="w-6 h-6" />
@@ -582,9 +755,9 @@ export default function App() {
           <div className="relative">
             <button 
               onClick={() => setShowLevelSelector(!showLevelSelector)} 
-              className={`flex items-center gap-2 border px-3 py-1.5 rounded-full text-[14px] font-medium transition-all active:scale-95 ${isDangerous ? 'bg-red-950/40 border-red-500/30 text-red-100 hover:bg-red-900/40' : 'bg-white/5 border-white/10 text-zinc-200 hover:bg-white/10'}`}
+              className={`flex items-center gap-2 border px-3 py-1.5 rounded-full text-[14px] font-medium transition-all active:scale-95 ${theme.bgLight} ${theme.border} text-zinc-200 hover:bg-white/10`}
             >
-              {React.createElement(selectedLevelObj.icon, { className: `w-4 h-4 ${selectedLevelObj.color}` })}
+              {React.createElement(selectedLevelObj.icon, { className: `w-4 h-4 ${theme.text}` })}
               <span>{selectedLevelObj.name}</span>
               <ChevronDown className={`w-4 h-4 text-zinc-400 ml-0.5 transition-transform ${showLevelSelector ? 'rotate-180' : ''}`} />
             </button>
@@ -603,20 +776,20 @@ export default function App() {
                     <div className="p-1.5 grid grid-cols-1 gap-0.5 max-h-[60vh] overflow-y-auto custom-scrollbar">
                       {AI_LEVELS.map(level => {
                         const Icon = level.icon;
-                        const isLevelDangerous = ['extreme', 'new'].includes(level.id);
+                        const isLevelDangerous = level.theme.isDangerous;
                         return (
                           <button
                             key={level.id}
                             onClick={() => { setSelectedLevel(level.id); setShowLevelSelector(false); }}
                             className={`w-full text-left p-2.5 rounded-xl flex items-center gap-3 transition-colors ${selectedLevel === level.id ? 'bg-white/10' : 'hover:bg-white/5 active:bg-white/10'}`}
                           >
-                            <div className={`p-1.5 rounded-lg bg-black/40 border border-white/10 shrink-0 ${selectedLevel === level.id ? level.color : 'text-zinc-400'}`}>
+                            <div className={`p-1.5 rounded-lg bg-black/40 border border-white/10 shrink-0 ${selectedLevel === level.id ? level.theme.text : 'text-zinc-400'}`}>
                               <Icon className="w-4 h-4" />
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between">
                                 <span className={`font-medium text-[14px] ${selectedLevel === level.id ? 'text-zinc-100' : 'text-zinc-300'}`}>{level.name}</span>
-                                {selectedLevel === level.id && <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isLevelDangerous ? 'bg-red-500' : 'bg-blue-500'}`} />}
+                                {selectedLevel === level.id && <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${level.theme.blob1.replace('bg-', 'bg-')}`} />}
                               </div>
                               <p className="text-[11px] text-zinc-400 mt-0.5 truncate">{level.desc}</p>
                             </div>
@@ -635,8 +808,8 @@ export default function App() {
         <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar scroll-smooth">
           {activeConversation?.messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto px-4">
-              <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mb-4 border ${isDangerous ? 'bg-red-600/10 border-red-500/20' : 'bg-blue-600/10 border-blue-500/20'}`}>
-                <Bot className={`w-8 h-8 ${isDangerous ? 'text-red-500' : 'text-blue-500'}`} />
+              <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mb-4 border transition-colors duration-500 ${theme.bgLight} ${theme.border}`}>
+                <Bot className={`w-8 h-8 ${theme.text}`} />
               </div>
               <h2 className="text-2xl font-bold text-white mb-2 tracking-tight">INEX Agent</h2>
               <p className="text-zinc-400 text-[14px] leading-relaxed">
@@ -662,21 +835,33 @@ export default function App() {
                     className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
                   >
                     <div
-                      className={`max-w-[85%] md:max-w-[75%] px-4 py-3 rounded-2xl backdrop-blur-md border ${
+                      className={`max-w-[85%] md:max-w-[75%] px-4 py-3 rounded-2xl backdrop-blur-md border transition-colors duration-500 ${
                         msg.role === 'user'
-                          ? `text-white rounded-br-sm ${isDangerous ? 'bg-red-600/80 border-red-500/50' : 'bg-blue-600/80 border-blue-500/50'}`
+                          ? `text-white rounded-br-sm ${theme.bg} ${theme.border}`
                           : msg.status === 'error' 
                             ? 'bg-red-950/40 text-red-200 rounded-bl-sm border-red-900/50'
                             : 'bg-white/5 text-zinc-200 rounded-bl-sm border-white/10'
                       }`}
                     >
+                      {/* Attachments Display */}
+                      {msg.attachments && msg.attachments.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          {msg.attachments.map((att, i) => (
+                            <div key={i} className="flex items-center gap-2 bg-black/40 border border-white/10 px-2.5 py-1.5 rounded-lg text-xs">
+                              <FileText className="w-3.5 h-3.5 text-zinc-400" />
+                              <span className="truncate max-w-[150px]">{att.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
                       {msg.role === 'model' ? (
                         <div className="markdown-body text-[15px] leading-relaxed break-words">
                           {msg.text ? (
                             <>
                               <Markdown components={{ code: CodeBlock }}>{msg.text}</Markdown>
                               {/* Typewriter Cursor */}
-                              {isLoading && index === activeConversation.messages.length - 1 && msg.status !== 'error' && msg.status !== 'waiting_approval' && (
+                              {isLoading && index === activeConversation.messages.length - 1 && msg.status !== 'error' && msg.status !== 'waiting_approval' && msg.status !== 'aborted' && (
                                 <span className="typewriter-cursor" />
                               )}
                             </>
@@ -687,8 +872,8 @@ export default function App() {
                           {/* Tool Approval UI */}
                           {msg.pendingToolCall && msg.status === 'waiting_approval' && (
                             <div className="mt-4 p-4 rounded-xl bg-black/40 border border-white/10 backdrop-blur-md">
-                              <div className="flex items-center gap-2 text-blue-400 mb-2">
-                                <Wrench className="w-4 h-4" />
+                              <div className={`flex items-center gap-2 mb-2 ${theme.text}`}>
+                                {msg.pendingToolCall.name === 'webSearch' ? <Globe className="w-4 h-4" /> : <Wrench className="w-4 h-4" />}
                                 <span className="text-sm font-semibold">Tool Approval Required</span>
                               </div>
                               <p className="text-[13px] text-zinc-300 mb-2">The AI wants to use <strong>{msg.pendingToolCall.name}</strong></p>
@@ -703,12 +888,12 @@ export default function App() {
                           )}
 
                           {/* Regenerate Button for Errors */}
-                          {msg.status === 'error' && (
+                          {(msg.status === 'error' || msg.status === 'aborted') && (
                             <div className="mt-4 flex items-center gap-2">
-                              <AlertTriangle className="w-4 h-4 text-red-400" />
+                              {msg.status === 'error' && <AlertTriangle className="w-4 h-4 text-red-400" />}
                               <button 
                                 onClick={() => handleRegenerate(msg.id)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-900/50 hover:bg-red-900/80 text-red-200 rounded-lg text-sm font-medium transition-colors active:scale-95 border border-red-500/30"
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium transition-colors active:scale-95 border border-white/10"
                               >
                                 <RefreshCw className="w-3.5 h-3.5" />
                                 Regenerate
@@ -722,7 +907,7 @@ export default function App() {
                     </div>
                     
                     {/* Metadata & Actions Footer */}
-                    <div className={`flex flex-wrap items-center gap-3 mt-1.5 px-1 text-[11px] font-medium ${msg.role === 'user' ? (isDangerous ? 'text-red-300/80' : 'text-blue-300/80') + ' flex-row-reverse' : 'text-zinc-500'}`}>
+                    <div className={`flex flex-wrap items-center gap-3 mt-1.5 px-1 text-[11px] font-medium ${msg.role === 'user' ? theme.text + ' flex-row-reverse opacity-80' : 'text-zinc-500'}`}>
                       <span className="flex items-center gap-1"><Clock className="w-3 h-3 opacity-70" /> {formatTime(msg.timestamp)}</span>
                       
                       {/* Status Indicator */}
@@ -731,15 +916,15 @@ export default function App() {
                         <span className="capitalize">{msg.status.replace('_', ' ')}</span>
                       </span>
 
-                      {msg.duration !== undefined && msg.status !== 'error' && (
-                        <span className="flex items-center gap-1 text-blue-400/80"><Timer className="w-3 h-3 opacity-70" /> {(msg.duration / 1000).toFixed(1)}s</span>
+                      {msg.duration !== undefined && msg.status !== 'error' && msg.status !== 'aborted' && (
+                        <span className="flex items-center gap-1 opacity-80"><Timer className="w-3 h-3 opacity-70" /> {(msg.duration / 1000).toFixed(1)}s</span>
                       )}
                       
-                      {msg.tokens && msg.status !== 'error' && (
+                      {msg.tokens && msg.status !== 'error' && msg.status !== 'aborted' && (
                         <span className="flex items-center gap-1"><Activity className="w-3 h-3 opacity-70" /> {msg.tokens.total} tkns</span>
                       )}
                       
-                      {msg.cost !== undefined && msg.status !== 'error' && (
+                      {msg.cost !== undefined && msg.status !== 'error' && msg.status !== 'aborted' && (
                         <span className="flex items-center gap-1 text-emerald-500/80"><Coins className="w-3 h-3 opacity-70" /> ${msg.cost.toFixed(6)}</span>
                       )}
 
@@ -763,35 +948,82 @@ export default function App() {
         </div>
 
         {/* Input Area */}
-        <div className={`flex-none p-3 pb-safe z-20 ${isDangerous ? 'glass-panel-danger border-t-red-500/30' : 'glass-panel border-t-white/10'}`}>
-          <div className="max-w-3xl mx-auto flex items-end gap-2">
-            <div className={`flex-1 rounded-3xl border transition-colors flex items-end bg-black/40 backdrop-blur-md ${isDangerous ? 'border-red-500/30 focus-within:border-red-500/60' : 'border-white/10 focus-within:border-white/30'}`}>
-              <textarea
-                ref={textareaRef}
-                value={input}
-                onChange={(e) => {
-                  setInput(e.target.value);
-                  e.target.style.height = 'auto';
-                  e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
-                }}
-                onKeyDown={handleKeyDown}
-                placeholder="Message INEX Agent..."
-                className="w-full bg-transparent px-4 py-3.5 max-h-[120px] text-[15px] text-zinc-200 placeholder-zinc-500 focus:outline-none resize-none hide-scrollbar"
-                rows={1}
-                disabled={isLoading}
-              />
+        <div className={`flex-none p-3 pb-safe z-20 glass-panel border-t transition-colors duration-500 ${theme.border}`}>
+          <div className="max-w-3xl mx-auto">
+            {/* Attachments Preview */}
+            {attachments.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-3 px-1">
+                {attachments.map(att => (
+                  <div key={att.id} className="relative flex items-center gap-2 bg-black/40 border border-white/10 px-3 py-2 rounded-xl text-sm w-full sm:w-auto">
+                    <FileText className="w-4 h-4 text-zinc-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate text-zinc-200 pr-6">{att.file.name}</div>
+                      <div className="w-full bg-white/10 h-1 rounded-full mt-1.5 overflow-hidden">
+                        <div className={`h-full ${theme.blob1} transition-all duration-300`} style={{ width: `${att.progress}%` }} />
+                      </div>
+                    </div>
+                    <button onClick={() => removeAttachment(att.id)} className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-white rounded-full hover:bg-white/10">
+                      <XCircle className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-end gap-2">
+              <div className={`flex-1 rounded-3xl border transition-colors flex items-end bg-black/40 backdrop-blur-md ${theme.border} ${theme.focus}`}>
+                <input 
+                  type="file" 
+                  multiple 
+                  className="hidden" 
+                  ref={fileInputRef} 
+                  onChange={handleFileSelect}
+                />
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-3.5 text-zinc-400 hover:text-white transition-colors"
+                  title="Attach file (Max 10MB, up to 5)"
+                >
+                  <Paperclip className="w-5 h-5" />
+                </button>
+                <textarea
+                  ref={textareaRef}
+                  value={input}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    e.target.style.height = 'auto';
+                    e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
+                  }}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Message INEX Agent..."
+                  className="w-full bg-transparent pr-4 py-3.5 max-h-[120px] text-[15px] text-zinc-200 placeholder-zinc-500 focus:outline-none resize-none hide-scrollbar"
+                  rows={1}
+                  disabled={isLoading}
+                />
+              </div>
+              
+              {isLoading ? (
+                <button
+                  onClick={handleStopGeneration}
+                  className="p-3.5 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 bg-white/10 text-white hover:bg-white/20 border border-white/10 shadow-lg"
+                  title="Stop generating"
+                >
+                  <Square className="w-5 h-5 fill-current" />
+                </button>
+              ) : (
+                <button
+                  onClick={handleSend}
+                  disabled={(!input.trim() && attachments.length === 0) || isLoading}
+                  className={`p-3.5 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 ${
+                    (input.trim() || attachments.length > 0) && !isLoading
+                      ? `${theme.blob1} text-white shadow-lg shadow-black/50`
+                      : 'bg-white/5 text-zinc-600 border border-white/10'
+                  }`}
+                >
+                  <Send className="w-5 h-5 ml-0.5" />
+                </button>
+              )}
             </div>
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || isLoading}
-              className={`p-3.5 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 ${
-                input.trim() && !isLoading
-                  ? (isDangerous ? 'bg-red-600 text-white shadow-lg shadow-red-600/20' : 'bg-blue-600 text-white shadow-lg shadow-blue-600/20')
-                  : 'bg-white/5 text-zinc-600 border border-white/10'
-              }`}
-            >
-              <Send className="w-5 h-5 ml-0.5" />
-            </button>
           </div>
         </div>
       </div>
