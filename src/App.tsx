@@ -14,7 +14,8 @@ import { MessageStatus, Attachment, Message, Conversation, FileNode } from './ty
 import { 
   calculatorTool, webSearchTool, imageGenerationTool, imageEditTool, audioGenerationTool, 
   saveMemoryTool, updateMemoryTool, deleteMemoryTool, 
-  createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool 
+  createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool,
+  urlFetchTool, copyFileTool, moveFileTool
 } from './tools';
 import { 
   initDB, saveFileToDB, getFilesFromDB, deleteFileFromDB, 
@@ -31,6 +32,36 @@ const AI_LEVELS = [
   { id: 'extreme', name: 'Extreme', model: 'gemini-3-pro-preview', inPrice: 1.25, outPrice: 5.00, icon: Rocket, color: 'text-red-500', desc: 'Maximum capability, complex tasks', theme: { blob1: 'bg-red-600', blob2: 'bg-rose-600', blob3: 'bg-red-700', border: 'border-red-500/50', focus: 'focus-within:border-red-500/80', bg: 'bg-red-600/80', bgLight: 'bg-red-600/20', text: 'text-red-400', isDangerous: true } },
   { id: 'new', name: 'New', model: 'gemini-3.1-pro-preview', inPrice: 1.25, outPrice: 5.00, icon: Sparkles, color: 'text-emerald-400', desc: 'Latest experimental model', theme: { blob1: 'bg-emerald-600', blob2: 'bg-teal-600', blob3: 'bg-green-600', border: 'border-emerald-500/30', focus: 'focus-within:border-emerald-500/60', bg: 'bg-emerald-600/80', bgLight: 'bg-emerald-600/10', text: 'text-emerald-400', isDangerous: true } },
 ];
+
+const ThinkingBlock = ({ children }: { children: React.ReactNode }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  return (
+    <div className="my-3 border border-blue-500/20 rounded-2xl overflow-hidden bg-blue-500/5 backdrop-blur-sm">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-blue-400 hover:bg-blue-500/10 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Brain className={`w-4 h-4 ${isExpanded ? 'animate-pulse' : ''}`} />
+          <span>Thinking Process</span>
+        </div>
+        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
+      </button>
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="px-4 pb-4 text-[14px] text-zinc-400 font-serif italic border-t border-blue-500/10 leading-relaxed"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
 
 const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
   const match = /language-(\w+)/.exec(className || '');
@@ -53,6 +84,10 @@ const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  if (lang === 'thinking') {
+    return <ThinkingBlock>{children}</ThinkingBlock>;
+  }
 
   if (!inline && match) {
     return (
@@ -116,12 +151,13 @@ export default function App() {
         balanceAfter: newBalance
       };
       
-      const currentSettings = settingsRef.current; // Use ref to get latest settings
+      const currentSettings = settingsRef.current;
       const newSettings = { 
         ...currentSettings, 
         balanceLogs: [...(currentSettings.balanceLogs || []), newLog] 
       };
       
+      settingsRef.current = newSettings;
       setSettings(newSettings);
       saveSettings(newSettings);
       
@@ -197,18 +233,22 @@ export default function App() {
   const handleDeleteFile = async (id: string) => {
     try {
       console.log('Deleting file:', id);
-      // Recursive delete
-      const getChildrenIds = (parentId: string): string[] => {
-        const children = files.filter(f => f.parentId === parentId);
-        return children.reduce((acc, child) => [...acc, child.id, ...getChildrenIds(child.id)], [] as string[]);
+      
+      const getChildrenIds = (parentId: string, allFiles: FileNode[]): string[] => {
+        const children = allFiles.filter(f => f.parentId === parentId);
+        return children.reduce((acc, child) => [...acc, child.id, ...getChildrenIds(child.id, allFiles)], [] as string[]);
       };
-      const idsToDelete = [id, ...getChildrenIds(id)];
-      console.log('IDs to delete:', idsToDelete);
+
+      let deletedCount = 0;
+      setFiles(prev => {
+        const idsToDelete = [id, ...getChildrenIds(id, prev)];
+        deletedCount = idsToDelete.length;
+        // background delete from DB
+        Promise.all(idsToDelete.map(delId => deleteFileFromDB(delId))).catch(e => console.error("DB Delete error", e));
+        return prev.filter(f => !idsToDelete.includes(f.id));
+      });
       
-      setFiles(prev => prev.filter(f => !idsToDelete.includes(f.id)));
-      
-      await Promise.all(idsToDelete.map(delId => deleteFileFromDB(delId)));
-      addToast('File deleted successfully', 'success');
+      addToast(`Deleted ${deletedCount} item(s)`, 'success');
     } catch (error) {
       console.error('Error deleting file:', error);
       addToast('Failed to delete file', 'error');
@@ -217,6 +257,13 @@ export default function App() {
 
   const [selectedLevel, setSelectedLevel] = useState<string>('fast');
   const [showLevelSelector, setShowLevelSelector] = useState(false);
+  const [thinkingEnabled, setThinkingEnabled] = useState(() => {
+    return localStorage.getItem('inex_thinking_enabled') === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('inex_thinking_enabled', thinkingEnabled.toString());
+  }, [thinkingEnabled]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   
@@ -312,7 +359,6 @@ export default function App() {
   const handleStopGeneration = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      abortControllerRef.current = null;
     }
     setIsLoading(false);
   };
@@ -348,6 +394,14 @@ export default function App() {
     try {
       if (call.name === 'calculator') {
         result = Function('"use strict";return (' + call.args.expression + ')')();
+      } else if (call.name === 'urlFetch') {
+        const res = await fetch('/api/fetch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: call.args.url })
+        });
+        const data = await res.json();
+        result = data.content || data.error || "Failed to fetch content.";
       } else if (call.name === 'webSearch') {
         const res = await fetch('/api/search', {
           method: 'POST',
@@ -521,7 +575,7 @@ export default function App() {
         } else {
           result = `Memory with ID ${call.args.id} not found.`;
         }
-      } else if (['createFile', 'createFolder', 'deleteNode', 'readFile', 'editFile', 'renameNode', 'listFiles'].includes(call.name)) {
+      } else if (['createFile', 'createFolder', 'deleteNode', 'readFile', 'editFile', 'renameNode', 'listFiles', 'copyFile', 'moveFile'].includes(call.name)) {
         if (call.name === 'createFile') {
           const newNode: FileNode = {
             id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -580,6 +634,39 @@ export default function App() {
           const parentId = call.args.parentId || null;
           const children = currentFiles.filter(f => f.parentId === parentId).map(f => ({ id: f.id, name: f.name, isFolder: f.isFolder }));
           result = children.length > 0 ? children : "Folder is empty.";
+        } else if (call.name === 'copyFile') {
+          const sourceNode = currentFiles.find(f => f.id === call.args.id);
+          if (sourceNode) {
+            const recursiveCopy = (node: FileNode, newParentId: string | null): string => {
+              const newId = `${node.isFolder ? 'folder' : 'file'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+              const newNode = {
+                ...node,
+                id: newId,
+                parentId: newParentId,
+                createdAt: Date.now(),
+                updatedAt: Date.now()
+              };
+              handleAddFile(newNode);
+
+              if (node.isFolder) {
+                const children = currentFiles.filter(f => f.parentId === node.id);
+                children.forEach(child => recursiveCopy(child, newId));
+              }
+              return newId;
+            };
+            const newId = recursiveCopy(sourceNode, call.args.parentId || null);
+            result = `Node copied successfully. New ID: ${newId}`;
+          } else {
+            result = `Source node with ID ${call.args.id} not found.`;
+          }
+        } else if (call.name === 'moveFile') {
+          const node = currentFiles.find(f => f.id === call.args.id);
+          if (node) {
+            handleUpdateFile({ ...node, parentId: call.args.parentId || null, updatedAt: Date.now() });
+            result = `Node moved successfully.`;
+          } else {
+            result = `Node with ID ${call.args.id} not found.`;
+          }
         }
       } else {
         result = "Tool not supported.";
@@ -606,7 +693,9 @@ export default function App() {
     const outputTokensCost = getTokenCost(outputTokens);
     const totalTokenCost = inputTokensCost + outputTokensCost;
 
-    if (call.name === 'webSearch') {
+    if (call.name === 'urlFetch') {
+      costToAdd = (totalTokenCost + 0.001) * 1.1;
+    } else if (call.name === 'webSearch') {
       costToAdd = (0.01 + totalTokenCost) * 1.1;
       if (currentSettings.apiKeys.search[0]) costToAdd = totalTokenCost * 1.1;
     } else if (call.name === 'calculator') {
@@ -640,14 +729,16 @@ export default function App() {
     return { result, costToAdd, inputTokens, outputTokens, totalToolTokens };
   };
 
-  const runAI = async (convId: string, history: Message[]) => {
+  const runAI = async (convId: string, history: Message[], isRecursive = false) => {
     if (!settings.apiKeys.text[0] && balance <= 0) {
       setShowAddFunds(true);
       return;
     }
 
     setIsLoading(true);
-    abortControllerRef.current = new AbortController();
+    if (!isRecursive) {
+      abortControllerRef.current = new AbortController();
+    }
     
     const modelMessageId = `model-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const emptyModelMessage: Message = { id: modelMessageId, role: 'model', text: '', timestamp: Date.now(), status: 'processing' };
@@ -699,6 +790,9 @@ export default function App() {
       if (settings.phoneNumber) sysInst += `User Phone Number: ${settings.phoneNumber}\n`;
       if (settings.birthDate) sysInst += `User Birth Date: ${settings.birthDate}. Calculate their current age based on today's date. If they ask for age + 5, calculate it accordingly.\n`;
       if (settings.instructions) sysInst += `User Instructions: ${settings.instructions}\n`;
+      if (thinkingEnabled) {
+        sysInst += `\n${THINKING_PROTOCOL}\n`;
+      }
       
       if (settings.memoryEnabled) {
         sysInst += `\nCRITICAL INSTRUCTION FOR MEMORY: You MUST automatically use the 'saveMemory' tool to save any new personal facts, preferences, phone numbers, or details the user mentions about themselves. Do this proactively without asking for permission.\n`;
@@ -716,6 +810,7 @@ export default function App() {
       if (settings.memoryEnabled) {
         activeTools.push(saveMemoryTool, updateMemoryTool, deleteMemoryTool);
       }
+      activeTools.push(urlFetchTool, copyFileTool, moveFileTool);
 
       const config: any = {
         systemInstruction: sysInst,
@@ -737,7 +832,7 @@ export default function App() {
       let isAborted = false;
 
       for await (const chunk of stream) {
-        if (abortControllerRef.current?.signal.aborted) {
+        if (abortControllerRef.current?.signal.aborted || !isLoading) {
           isAborted = true;
           break;
         }
@@ -874,7 +969,7 @@ export default function App() {
             messages: c.messages.map(m => m.id === modelMessageId ? { ...m, status: 'done' as MessageStatus } : m).concat(toolResMsg)
           } : c));
 
-          await runAI(convId, newHistory);
+          await runAI(convId, newHistory, true);
           return;
         }
 
@@ -1050,7 +1145,7 @@ export default function App() {
     if (isABTest) {
       await runABTest(activeId, updatedMessages);
     } else {
-      await runAI(activeId, updatedMessages);
+      await runAI(activeId, updatedMessages, false);
     }
   };
 
@@ -1111,6 +1206,9 @@ export default function App() {
       if (settings.phoneNumber) sysInst += `User Phone Number: ${settings.phoneNumber}\n`;
       if (settings.birthDate) sysInst += `User Birth Date: ${settings.birthDate}. Calculate their current age based on today's date. If they ask for age + 5, calculate it accordingly.\n`;
       if (settings.instructions) sysInst += `User Instructions: ${settings.instructions}\n`;
+      if (thinkingEnabled) {
+        sysInst += `\n${THINKING_PROTOCOL}\n`;
+      }
       
       if (settings.memoryEnabled) {
         sysInst += `\nCRITICAL INSTRUCTION FOR MEMORY: You MUST automatically use the 'saveMemory' tool to save any new personal facts, preferences, phone numbers, or details the user mentions about themselves. Do this proactively without asking for permission.\n`;
@@ -1210,7 +1308,7 @@ export default function App() {
       messages: updatedHistory
     } : c));
 
-    await runAI(convId, updatedHistory);
+    await runAI(convId, updatedHistory, true);
   };
 
   const toggleAutoMode = () => {
@@ -1263,7 +1361,7 @@ export default function App() {
       messages: history
     } : c));
 
-    await runAI(activeId, history);
+    await runAI(activeId, history, false);
   };
 
   const [showAttachMenu, setShowAttachMenu] = useState(false);
@@ -1318,6 +1416,15 @@ export default function App() {
 
   const formatTime = (ts: number) => {
     return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const formatDate = (ts: number) => {
+    const d = new Date(ts);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return 'Today';
+    const yesterday = new Date(); yesterday.setDate(now.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
   };
 
   const StatusIcon = ({ status, role }: { status: MessageStatus, role: 'user' | 'model' | 'function' }) => {
@@ -1677,8 +1784,24 @@ export default function App() {
 
         <div className="flex-1 overflow-y-auto px-2 space-y-1 pb-4 custom-scrollbar">
           <div className="px-3 py-2 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Conversations</div>
-          {[...conversations].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)).map((conv) => (
-            <div key={conv.id} className="group relative flex items-center">
+          {(() => {
+            const sorted = [...conversations].sort((a, b) => {
+              if (a.pinned !== b.pinned) return b.pinned ? 1 : -1;
+              return b.updatedAt - a.updatedAt;
+            });
+
+            const groups: { [key: string]: Conversation[] } = {};
+            sorted.forEach(c => {
+              const date = formatDate(c.updatedAt);
+              if (!groups[date]) groups[date] = [];
+              groups[date].push(c);
+            });
+
+            return Object.entries(groups).map(([date, convs]) => (
+              <div key={date} className="space-y-1 mt-4">
+                <div className="px-3 py-1.5 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{date}</div>
+                {convs.map(conv => (
+            <div key={conv.id} className="group relative flex items-center px-1">
               <button 
                 onClick={() => { setActiveId(conv.id); setSidebarOpen(false); }} 
                 className={`w-full text-left px-3 py-3 rounded-xl text-sm truncate transition-all flex items-center gap-3 pr-[120px] ${activeId === conv.id ? 'bg-white/10 text-white shadow-sm border border-white/10' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent active:bg-white/5'}`}
@@ -1686,23 +1809,33 @@ export default function App() {
                 <MessageSquare className={`w-4 h-4 shrink-0 ${activeId === conv.id ? theme.text : 'opacity-70'}`} />
                 <span className="truncate text-[15px] md:text-sm flex-1">{conv.pinned && <Pin className="w-3 h-3 inline mr-1 text-yellow-500" />}{conv.title}</span>
               </button>
-              <div className="absolute right-2 flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-md rounded-lg p-0.5 border border-white/10">
-                <button onClick={(e) => togglePin(conv.id, e)} className="p-1.5 text-zinc-400 hover:text-yellow-400 hover:bg-white/10 rounded-md" title="Pin"><Pin className="w-3.5 h-3.5" /></button>
-                <button onClick={(e) => editTitle(conv.id, e)} className="p-1.5 text-zinc-400 hover:text-blue-400 hover:bg-white/10 rounded-md" title="Edit"><Edit2 className="w-3.5 h-3.5" /></button>
-                <button onClick={(e) => exportConv(conv.id, e)} className="p-1.5 text-zinc-400 hover:text-emerald-400 hover:bg-white/10 rounded-md" title="Export"><Download className="w-3.5 h-3.5" /></button>
-                <button onClick={(e) => deleteConv(conv.id, e)} className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-white/10 rounded-md" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
+              <div className="absolute right-3 flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity bg-black/80 backdrop-blur-md rounded-xl p-1 border border-white/10 shadow-2xl z-10">
+                <button onClick={(e) => togglePin(conv.id, e)} className="p-2 text-zinc-400 hover:text-yellow-400 hover:bg-white/10 rounded-lg transition-colors" title="Pin"><Pin className="w-4 h-4" /></button>
+                <button onClick={(e) => editTitle(conv.id, e)} className="p-2 text-zinc-400 hover:text-blue-400 hover:bg-white/10 rounded-lg transition-colors" title="Edit"><Edit2 className="w-4 h-4" /></button>
+                <button onClick={(e) => deleteConv(conv.id, e)} className="p-2 text-zinc-400 hover:text-red-400 hover:bg-white/10 rounded-lg transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>
               </div>
             </div>
           ))}
+              </div>
+            ));
+          })()}
         </div>
 
         <div className="p-4 border-t border-white/10 bg-black/20 shrink-0 pb-safe">
-          <div className="flex items-center justify-between bg-black/40 px-4 py-3 rounded-xl border border-white/5 shadow-inner">
-            <div className="flex items-center gap-2 text-sm text-zinc-400">
-              <Coins className="w-4 h-4 text-emerald-400" />
-              <span>Balance</span>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between bg-black/40 px-4 py-3 rounded-xl border border-white/5 shadow-inner">
+              <div className="flex items-center gap-2 text-sm text-zinc-400">
+                <Coins className="w-4 h-4 text-emerald-400" />
+                <span>Balance</span>
+              </div>
+              <span className="font-mono text-emerald-400 font-medium">${balance.toFixed(4)}</span>
             </div>
-            <span className="font-mono text-emerald-400 font-medium">${balance.toFixed(4)}</span>
+            <button
+              onClick={() => setShowPayment(true)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 rounded-xl text-sm font-medium border border-emerald-600/30 transition-all active:scale-95"
+            >
+              <Plus className="w-4 h-4" /> Add Funds
+            </button>
           </div>
         </div>
       </div>
@@ -1710,21 +1843,29 @@ export default function App() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
         {/* Header */}
-        <header className={`h-14 border-b flex items-center justify-between px-3 md:px-4 shrink-0 z-20 pt-safe glass-panel transition-colors duration-500 ${theme.border}`}>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors active:bg-white/5">
-              <Menu className="w-6 h-6" />
+        <header className={`h-14 md:h-16 border-b flex items-center justify-between px-2 md:px-4 shrink-0 z-20 pt-safe glass-panel transition-colors duration-500 ${theme.border}`}>
+          <div className="flex items-center gap-1.5 md:gap-2">
+            <button onClick={() => setSidebarOpen(true)} className="md:hidden p-1.5 text-zinc-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors active:scale-95">
+              <Menu className="w-5 h-5" />
             </button>
-            {isDangerous && (
-              <div className="hidden md:flex items-center gap-1.5 px-2 py-1 bg-red-500/20 border border-red-500/30 rounded-md text-red-200 text-xs font-medium animate-pulse">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                High Cost Model Active
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-white md:text-base truncate max-w-[120px] md:max-w-[200px]">
+                  {activeConversation?.title || 'Chat'}
+                </h2>
+                {isDangerous && <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" title="High Cost Model" />}
               </div>
-            )}
+              {activeConversation && (
+                <div className="flex items-center gap-2 text-[10px] md:text-xs text-emerald-400/80 font-mono">
+                  <Coins className="w-3 h-3" />
+                  <span>Cost: ${(activeConversation.messages.reduce((acc, m) => acc + (m.cost || 0) + (m.toolResult?.cost || 0), 0)).toFixed(4)}</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Model Selector */}
-          <div className="relative flex items-center gap-4">
+          <div className="relative flex items-center gap-2 md:gap-4">
             {activeId && (
               <div className="flex items-center gap-2">
                 <span className="text-xs font-medium text-zinc-400">Auto Driven</span>
@@ -1831,20 +1972,30 @@ export default function App() {
                   );
                 }
 
+                const isTaskUI = activeConversation?.mode === 'auto' && thinkingEnabled && msg.role === 'model';
+
                 return (
                   <div
                     key={msg.id}
                     className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
                   >
                     <div
-                      className={`max-w-[85%] md:max-w-[75%] px-4 py-3 rounded-2xl backdrop-blur-md border transition-colors duration-500 ${
+                      className={`${isTaskUI ? 'w-full max-w-none' : 'max-w-[85%] md:max-w-[75%]'} px-4 py-3 rounded-2xl backdrop-blur-md border transition-colors duration-500 ${
                         msg.role === 'user'
                           ? `text-white rounded-br-sm ${theme.bg} ${theme.border}`
                           : msg.status === 'error' 
                             ? 'bg-red-950/40 text-red-200 rounded-bl-sm border-red-900/50'
-                            : 'bg-white/5 text-zinc-200 rounded-bl-sm border-white/10'
+                            : isTaskUI
+                              ? 'bg-blue-500/5 border-blue-500/20 text-zinc-200'
+                              : 'bg-white/5 text-zinc-200 rounded-bl-sm border-white/10'
                       }`}
                     >
+                      {isTaskUI && (
+                        <div className="flex items-center gap-2 mb-3 pb-2 border-b border-blue-500/10">
+                          <Activity className="w-4 h-4 text-blue-400" />
+                          <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Task Analysis</span>
+                        </div>
+                      )}
                       {/* Attachments Display */}
                       {msg.attachments && msg.attachments.length > 0 && (
                         <div className="flex flex-wrap gap-2 mb-3">
@@ -1862,7 +2013,7 @@ export default function App() {
                       )}
 
                       {msg.role === 'model' ? (
-                        <div className="markdown-body text-[15px] leading-relaxed break-words">
+                        <div className={`${isTaskUI ? 'space-y-4' : ''} markdown-body text-[15px] leading-relaxed break-words`}>
                           {msg.text ? (
                             <>
                               <Markdown components={{ code: CodeBlock }}>{msg.text}</Markdown>
@@ -1996,8 +2147,8 @@ export default function App() {
               </div>
             )}
 
-            <div className="flex items-end gap-2">
-              <div className={`flex-1 rounded-3xl border transition-colors flex items-end bg-black/40 backdrop-blur-md ${theme.border} ${theme.focus}`}>
+            <div className="flex items-end gap-2 md:gap-3">
+              <div className={`flex-1 rounded-2xl md:rounded-3xl border transition-colors flex items-end bg-black/40 backdrop-blur-md ${theme.border} ${theme.focus}`}>
                 <input 
                   type="file" 
                   multiple 
@@ -2008,7 +2159,7 @@ export default function App() {
                 <div className="relative">
                   <button 
                     onClick={() => setShowAttachMenu(!showAttachMenu)}
-                    className="p-3.5 text-zinc-400 hover:text-white transition-colors"
+                    className="p-3 md:p-3.5 text-zinc-400 hover:text-white transition-colors"
                     title="Attach file"
                   >
                     <Paperclip className="w-5 h-5" />
@@ -2047,34 +2198,44 @@ export default function App() {
                     e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
                   }}
                   onKeyDown={handleKeyDown}
-                  placeholder="Message INEX Agent..."
-                  className="w-full bg-transparent pr-4 py-3.5 max-h-[120px] text-[15px] text-zinc-200 placeholder-zinc-500 focus:outline-none resize-none hide-scrollbar"
+                  placeholder="Message..."
+                  className="w-full bg-transparent pr-4 py-3 md:py-3.5 max-h-[120px] text-[15px] text-zinc-200 placeholder-zinc-500 focus:outline-none resize-none hide-scrollbar"
                   rows={1}
                   disabled={isLoading}
                 />
               </div>
               
-              {isLoading ? (
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={handleStopGeneration}
-                  className="p-3.5 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 bg-white/10 text-white hover:bg-white/20 border border-white/10 shadow-lg"
-                  title="Stop generating"
+                  onClick={() => setThinkingEnabled(!thinkingEnabled)}
+                  className={`p-3 md:p-3.5 rounded-full transition-all active:scale-95 border ${thinkingEnabled ? 'bg-blue-600/20 border-blue-500/50 text-blue-400 shadow-[0_0_15px_rgba(37,99,235,0.2)]' : 'bg-white/5 border-white/10 text-zinc-500 hover:text-zinc-400'}`}
+                  title="Toggle Thinking Mode"
                 >
-                  <Square className="w-5 h-5 fill-current" />
+                  <Brain className={`w-5 h-5 ${thinkingEnabled ? 'animate-pulse' : ''}`} />
                 </button>
-              ) : (
-                <button
-                  onClick={handleSend}
-                  disabled={(!input.trim() && attachments.length === 0) || isLoading}
-                  className={`p-3.5 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 ${
-                    (input.trim() || attachments.length > 0) && !isLoading
-                      ? `${theme.blob1} text-white shadow-lg shadow-black/50`
-                      : 'bg-white/5 text-zinc-600 border border-white/10'
-                  }`}
-                >
-                  <Send className="w-5 h-5 ml-0.5" />
-                </button>
-              )}
+
+                {isLoading ? (
+                  <button
+                    onClick={handleStopGeneration}
+                    className="p-3 md:p-3.5 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 bg-white/10 text-white hover:bg-white/20 border border-white/10 shadow-lg"
+                    title="Stop generating"
+                  >
+                    <Square className="w-5 h-5 fill-current" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleSend}
+                    disabled={(!input.trim() && attachments.length === 0) || isLoading}
+                    className={`p-3 md:p-3.5 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 ${
+                      (input.trim() || attachments.length > 0) && !isLoading
+                        ? `${theme.blob1} text-white shadow-lg shadow-black/50`
+                        : 'bg-white/5 text-zinc-600 border border-white/10'
+                    }`}
+                  >
+                    <Send className="w-5 h-5 ml-0.5" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

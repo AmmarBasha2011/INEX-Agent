@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { X, Folder, FileText, Trash2, Edit2, Download, Plus, ChevronRight, ArrowLeft, Image as ImageIcon, Music, Video, Code, File as FileIcon, UploadCloud } from 'lucide-react';
+import { X, Folder, FileText, Trash2, Edit2, Download, Plus, ChevronRight, ArrowLeft, Image as ImageIcon, Music, Video, Code, File as FileIcon, UploadCloud, Copy, Move, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 type FileNode = {
@@ -54,6 +54,8 @@ export default function FileManagerModal({ files, onAddFile, onUpdateFile, onDel
   const [editContent, setEditContent] = useState('');
   const [renamingNode, setRenamingNode] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
+  const [movingNode, setMovingNode] = useState<FileNode | null>(null);
+  const [copyingNode, setCopyingNode] = useState<FileNode | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Upload Progress State
@@ -237,6 +239,46 @@ export default function FileManagerModal({ files, onAddFile, onUpdateFile, onDel
     if (!file.base64) URL.revokeObjectURL(url);
   };
 
+  const handleCopy = (file: FileNode, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCopyingNode(file);
+    alert(`Select destination folder and click "Paste Here" (top right)`);
+  };
+
+  const handleMove = (file: FileNode, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setMovingNode(file);
+    alert(`Select destination folder and click "Move Here" (top right)`);
+  };
+
+  const executePaste = () => {
+    if (copyingNode) {
+      // Logic handled via tools usually, but here we can just trigger a manual copy if we had access to full logic
+      // Since this is UI, we'll simulate or just call a prop if available.
+      // But we only have onAddFile and onUpdateFile.
+      // We'll use a recursive copy helper if needed, but for now let's assume we just want to support the UI state.
+      // Actually, the user wants me to fix and add features.
+
+      const recursiveCopy = (node: FileNode, pId: string | null) => {
+        const newId = `${node.isFolder ? 'folder' : 'file'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const newNode = { ...node, id: newId, parentId: pId, createdAt: Date.now(), updatedAt: Date.now() };
+        onAddFile(newNode);
+        if (node.isFolder) {
+          files.filter(f => f.parentId === node.id).forEach(child => recursiveCopy(child, newId));
+        }
+      };
+      recursiveCopy(copyingNode, currentFolderId);
+      setCopyingNode(null);
+    }
+  };
+
+  const executeMove = () => {
+    if (movingNode) {
+      onUpdateFile({ ...movingNode, parentId: currentFolderId, updatedAt: Date.now() });
+      setMovingNode(null);
+    }
+  };
+
   const openFile = (file: FileNode) => {
     if (file.isFolder) {
       setCurrentFolderId(file.id);
@@ -354,6 +396,16 @@ export default function FileManagerModal({ files, onAddFile, onUpdateFile, onDel
                 <button onClick={handleCreateFolder} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg text-sm font-medium transition-colors border border-blue-500/20">
                   <Folder className="w-4 h-4" /> New Folder
                 </button>
+                {copyingNode && (
+                  <button onClick={executePaste} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 rounded-lg text-sm font-medium transition-colors border border-emerald-500/20">
+                    <Check className="w-4 h-4" /> Paste Here
+                  </button>
+                )}
+                {movingNode && (
+                  <button onClick={executeMove} className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 rounded-lg text-sm font-medium transition-colors border border-orange-500/20">
+                    <Check className="w-4 h-4" /> Move Here
+                  </button>
+                )}
               </div>
             </div>
 
@@ -388,9 +440,15 @@ export default function FileManagerModal({ files, onAddFile, onUpdateFile, onDel
                           <span className="text-sm font-medium text-zinc-200 truncate">{file.name}</span>
                         )}
                       </div>
-                      <div className="flex items-center gap-1 opacity-100 transition-opacity">
+                      <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                         <button onClick={(e) => handleRename(file.id, file.name, e)} className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors" title="Rename">
                           <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={(e) => handleCopy(file, e)} className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors" title="Copy">
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={(e) => handleMove(file, e)} className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors" title="Move">
+                          <Move className="w-3.5 h-3.5" />
                         </button>
                         {!file.isFolder && (
                           <button onClick={(e) => handleDownload(file, e)} className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors" title="Download">

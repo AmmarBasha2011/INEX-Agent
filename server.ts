@@ -1,11 +1,28 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
   app.use(express.json());
+
+  // Proxy for URL fetching
+  app.post("/api/fetch", async (req, res) => {
+    try {
+      const { url } = req.body;
+      const response = await fetch(url);
+      const text = await response.text();
+      res.json({ content: text });
+    } catch (error) {
+      console.error("URL Fetch Error:", error);
+      res.status(500).json({ error: "Failed to fetch URL" });
+    }
+  });
 
   // Proxy for SerpAPI to avoid CORS issues on the frontend
   app.post("/api/search", async (req, res) => {
@@ -21,8 +38,13 @@ async function startServer() {
     }
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  // Serve static files in production or use vite in dev
+  if (process.env.NODE_ENV === "production") {
+    app.use(express.static(path.join(__dirname, "dist")));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(__dirname, "dist", "index.html"));
+    });
+  } else {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
