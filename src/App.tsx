@@ -5,10 +5,11 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI, Type, FunctionDeclaration } from '@google/genai';
-import { Send, Menu, Plus, MessageSquare, X, Activity, Clock, Coins, ChevronDown, Bot, Zap, Timer, Copy, Download, Brain, Flame, Rocket, Sparkles, Check, RefreshCw, AlertTriangle, CheckCheck, Loader2, Calculator, Wrench, Square, Paperclip, FileText, XCircle, Globe, Settings as SettingsIcon, Pin, Edit2, Trash2, Image as ImageIcon, Mic, MoreVertical } from 'lucide-react';
+import { Send, Menu, Plus, MessageSquare, X, Activity, Clock, Coins, ChevronDown, Bot, Zap, Timer, Copy, Download, Brain, Flame, Rocket, Sparkles, Check, RefreshCw, AlertTriangle, CheckCheck, Loader2, Calculator, Wrench, Square, Paperclip, FileText, XCircle, Globe, Settings as SettingsIcon, Pin, Edit2, Trash2, Image as ImageIcon, Mic, MoreVertical, Folder } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Markdown from 'react-markdown';
 import SettingsModal, { Settings, loadSettings, saveSettings } from './SettingsModal';
+import FileManagerModal from './FileManagerModal';
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -95,7 +96,61 @@ const deleteMemoryTool: FunctionDeclaration = {
   parameters: { type: Type.OBJECT, properties: { id: { type: Type.STRING } }, required: ['id'] }
 };
 
+const createFileTool: FunctionDeclaration = {
+  name: 'createFile',
+  description: 'Create a new text file in the File Manager.',
+  parameters: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, parentId: { type: Type.STRING, description: 'ID of the parent folder, or empty string for root' }, content: { type: Type.STRING } }, required: ['name', 'content'] }
+};
+
+const createFolderTool: FunctionDeclaration = {
+  name: 'createFolder',
+  description: 'Create a new folder in the File Manager.',
+  parameters: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, parentId: { type: Type.STRING, description: 'ID of the parent folder, or empty string for root' } }, required: ['name'] }
+};
+
+const deleteNodeTool: FunctionDeclaration = {
+  name: 'deleteNode',
+  description: 'Delete a file or folder by ID from the File Manager.',
+  parameters: { type: Type.OBJECT, properties: { id: { type: Type.STRING } }, required: ['id'] }
+};
+
+const readFileTool: FunctionDeclaration = {
+  name: 'readFile',
+  description: 'Read the content of a text file by ID from the File Manager.',
+  parameters: { type: Type.OBJECT, properties: { id: { type: Type.STRING } }, required: ['id'] }
+};
+
+const editFileTool: FunctionDeclaration = {
+  name: 'editFile',
+  description: 'Edit the content of an existing text file by ID in the File Manager.',
+  parameters: { type: Type.OBJECT, properties: { id: { type: Type.STRING }, content: { type: Type.STRING } }, required: ['id', 'content'] }
+};
+
+const renameNodeTool: FunctionDeclaration = {
+  name: 'renameNode',
+  description: 'Rename a file or folder by ID in the File Manager.',
+  parameters: { type: Type.OBJECT, properties: { id: { type: Type.STRING }, newName: { type: Type.STRING } }, required: ['id', 'newName'] }
+};
+
+const listFilesTool: FunctionDeclaration = {
+  name: 'listFiles',
+  description: 'List all files and folders in a specific folder (by parentId) or root (empty string) in the File Manager.',
+  parameters: { type: Type.OBJECT, properties: { parentId: { type: Type.STRING, description: 'ID of the parent folder, or empty string for root' } } }
+};
+
 type MessageStatus = 'sending' | 'sent' | 'processing' | 'done' | 'error' | 'waiting_approval' | 'aborted' | 'waiting_variant_selection';
+
+export type FileNode = {
+  id: string;
+  name: string;
+  isFolder: boolean;
+  parentId: string | null;
+  content?: string;
+  base64?: string;
+  mimeType?: string;
+  createdAt: number;
+  updatedAt: number;
+};
 
 type Attachment = {
   id: string;
@@ -189,10 +244,16 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(() => {
     return localStorage.getItem('inex_activeId') || null;
   });
+  const [files, setFiles] = useState<FileNode[]>(() => {
+    const saved = localStorage.getItem('inex_files');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [showFileManager, setShowFileManager] = useState(false);
 
   useEffect(() => { localStorage.setItem('inex_balance', balance.toString()); }, [balance]);
   useEffect(() => { localStorage.setItem('inex_conversations', JSON.stringify(conversations)); }, [conversations]);
   useEffect(() => { if (activeId) localStorage.setItem('inex_activeId', activeId); else localStorage.removeItem('inex_activeId'); }, [activeId]);
+  useEffect(() => { localStorage.setItem('inex_files', JSON.stringify(files)); }, [files]);
 
   const [selectedLevel, setSelectedLevel] = useState<string>('fast');
   const [showLevelSelector, setShowLevelSelector] = useState(false);
@@ -363,7 +424,7 @@ export default function App() {
         settings.preferences.forEach(p => { sysInst += `- ${p}\n`; });
       }
 
-      const activeTools = [calculatorTool, webSearchTool, imageGenerationTool, audioGenerationTool];
+      const activeTools = [calculatorTool, webSearchTool, imageGenerationTool, audioGenerationTool, createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool];
       if (settings.memoryEnabled) {
         activeTools.push(saveMemoryTool, updateMemoryTool, deleteMemoryTool);
       }
@@ -683,8 +744,13 @@ export default function App() {
         settings.preferences.forEach(p => { sysInst += `- ${p}\n`; });
       }
 
-      const configA = { systemInstruction: sysInst + "\n\nRespond with a highly concise, analytical, and direct tone.", tools: [] };
-      const configB = { systemInstruction: sysInst + "\n\nRespond with a warm, creative, and highly detailed tone.", tools: [] };
+      const activeTools = [calculatorTool, webSearchTool, imageGenerationTool, audioGenerationTool, createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool];
+      if (settings.memoryEnabled) {
+        activeTools.push(saveMemoryTool, updateMemoryTool, deleteMemoryTool);
+      }
+
+      const configA = { systemInstruction: sysInst + "\n\nRespond with a highly concise, analytical, and direct tone.", tools: [{ functionDeclarations: activeTools }] };
+      const configB = { systemInstruction: sysInst + "\n\nRespond with a warm, creative, and highly detailed tone.", tools: [{ functionDeclarations: activeTools }] };
 
       const aiInstance = settings.apiKeys.text[0] ? new GoogleGenAI({ apiKey: settings.apiKeys.text[0] }) : ai;
 
@@ -884,6 +950,84 @@ export default function App() {
         } else {
           result = `Memory with ID ${call.args.id} not found.`;
         }
+      } else if (['createFile', 'createFolder', 'deleteNode', 'readFile', 'editFile', 'renameNode', 'listFiles'].includes(call.name)) {
+        const inputStr = JSON.stringify(call.args);
+        const tokenCost = (inputStr.length / 4) * 0.0000025;
+        costToAdd += (tokenCost + 0.001) * 1.1;
+
+        if (call.name === 'createFile') {
+          const newNode: FileNode = {
+            id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            name: call.args.name,
+            isFolder: false,
+            parentId: call.args.parentId || null,
+            content: call.args.content,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          };
+          setFiles(prev => [...prev, newNode]);
+          result = `File created successfully with ID: ${newNode.id}`;
+        } else if (call.name === 'createFolder') {
+          const newNode: FileNode = {
+            id: `folder-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            name: call.args.name,
+            isFolder: true,
+            parentId: call.args.parentId || null,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          };
+          setFiles(prev => [...prev, newNode]);
+          result = `Folder created successfully with ID: ${newNode.id}`;
+        } else if (call.name === 'deleteNode') {
+          const nodeExists = files.some(f => f.id === call.args.id);
+          if (nodeExists) {
+            // Also delete children recursively
+            const getChildrenIds = (parentId: string): string[] => {
+              const children = files.filter(f => f.parentId === parentId);
+              return children.reduce((acc, child) => [...acc, child.id, ...getChildrenIds(child.id)], [] as string[]);
+            };
+            const idsToDelete = [call.args.id, ...getChildrenIds(call.args.id)];
+            setFiles(prev => prev.filter(f => !idsToDelete.includes(f.id)));
+            result = `Node and its children deleted successfully.`;
+          } else {
+            result = `Node with ID ${call.args.id} not found.`;
+          }
+        } else if (call.name === 'readFile') {
+          const node = files.find(f => f.id === call.args.id);
+          if (node && !node.isFolder) {
+            result = node.content || "File is empty or binary.";
+          } else {
+            result = `File with ID ${call.args.id} not found or is a folder.`;
+          }
+        } else if (call.name === 'editFile') {
+          setFiles(prev => {
+            const newFiles = [...prev];
+            const idx = newFiles.findIndex(f => f.id === call.args.id);
+            if (idx > -1 && !newFiles[idx].isFolder) {
+              newFiles[idx] = { ...newFiles[idx], content: call.args.content, updatedAt: Date.now() };
+              result = `File ${call.args.id} edited successfully.`;
+            } else {
+              result = `File with ID ${call.args.id} not found or is a folder.`;
+            }
+            return newFiles;
+          });
+        } else if (call.name === 'renameNode') {
+          setFiles(prev => {
+            const newFiles = [...prev];
+            const idx = newFiles.findIndex(f => f.id === call.args.id);
+            if (idx > -1) {
+              newFiles[idx] = { ...newFiles[idx], name: call.args.newName, updatedAt: Date.now() };
+              result = `Node ${call.args.id} renamed to ${call.args.newName}.`;
+            } else {
+              result = `Node with ID ${call.args.id} not found.`;
+            }
+            return newFiles;
+          });
+        } else if (call.name === 'listFiles') {
+          const parentId = call.args.parentId || null;
+          const children = files.filter(f => f.parentId === parentId).map(f => ({ id: f.id, name: f.name, isFolder: f.isFolder }));
+          result = children.length > 0 ? children : "Folder is empty.";
+        }
       } else {
         result = "Tool not supported.";
       }
@@ -956,6 +1100,49 @@ export default function App() {
     } : c));
 
     await runAI(activeId, history);
+  };
+
+  const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [showFileManagerSelect, setShowFileManagerSelect] = useState(false);
+
+  const handleSelectFromFileManager = (file: FileNode) => {
+    if (attachments.length >= 5) {
+      alert("Maximum 5 files allowed.");
+      return;
+    }
+    
+    // Create a mock File object or just use the base64/content directly
+    // For simplicity, we'll convert it to a File object
+    let blob: Blob;
+    if (file.base64 && file.mimeType) {
+      const byteCharacters = atob(file.base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      blob = new Blob([byteArray], { type: file.mimeType });
+    } else {
+      blob = new Blob([file.content || ''], { type: 'text/plain' });
+    }
+    
+    const newFile = new File([blob], file.name, { type: file.mimeType || 'text/plain' });
+    
+    if (newFile.size > 10 * 1024 * 1024) {
+      alert(`File ${file.name} exceeds 10MB limit.`);
+      return;
+    }
+
+    const newAtt: Attachment = {
+      id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      file: newFile,
+      progress: 100,
+      base64: file.base64 || btoa(unescape(encodeURIComponent(file.content || ''))),
+      mimeType: file.mimeType || 'text/plain'
+    };
+
+    setAttachments(prev => [...prev, newAtt]);
+    setShowFileManagerSelect(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -1098,6 +1285,54 @@ export default function App() {
         currentSettings={settings} 
         onSave={(s) => { setSettings(s); saveSettings(s); }} 
       />
+
+      {showFileManager && (
+        <FileManagerModal 
+          files={files} 
+          setFiles={setFiles} 
+          onClose={() => setShowFileManager(false)} 
+        />
+      )}
+
+      {showFileManagerSelect && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowFileManagerSelect(false)} />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="relative w-full max-w-md bg-[#111111] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[80vh]"
+          >
+            <div className="flex items-center justify-between p-4 border-b border-white/10 bg-white/5">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <Folder className="w-5 h-5 text-blue-400" />
+                Select File
+              </h2>
+              <button onClick={() => setShowFileManagerSelect(false)} className="p-2 text-zinc-400 hover:text-white hover:bg-white/10 rounded-xl transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
+              {files.filter(f => !f.isFolder).length === 0 ? (
+                <div className="p-8 text-center text-zinc-500 text-sm">No files available.</div>
+              ) : (
+                <div className="space-y-1">
+                  {files.filter(f => !f.isFolder).map(file => (
+                    <button 
+                      key={file.id}
+                      onClick={() => handleSelectFromFileManager(file)}
+                      className="w-full flex items-center gap-3 p-3 hover:bg-white/5 rounded-xl transition-colors text-left"
+                    >
+                      <FileText className="w-5 h-5 text-zinc-400 shrink-0" />
+                      <span className="text-sm font-medium text-zinc-200 truncate">{file.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
       
       {/* Liquid Glass Background Blobs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0 transition-colors duration-1000">
@@ -1136,12 +1371,19 @@ export default function App() {
           </div>
         </div>
         
-        <div className="p-3 shrink-0">
+        <div className="p-3 shrink-0 flex gap-2">
           <button 
             onClick={createNewConversation} 
-            className="w-full flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white py-2.5 rounded-xl font-medium transition-colors active:scale-95 border border-white/10"
+            className="flex-1 flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white py-2.5 rounded-xl font-medium transition-colors active:scale-95 border border-white/10"
           >
             <Plus className="w-4 h-4" /> New Chat
+          </button>
+          <button 
+            onClick={() => setShowFileManager(true)} 
+            className="p-2.5 flex items-center justify-center bg-white/5 hover:bg-white/10 text-zinc-300 rounded-xl transition-colors active:scale-95 border border-white/5"
+            title="File Manager"
+          >
+            <Folder className="w-5 h-5" />
           </button>
         </div>
 
@@ -1437,13 +1679,39 @@ export default function App() {
                   ref={fileInputRef} 
                   onChange={handleFileSelect}
                 />
-                <button 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-3.5 text-zinc-400 hover:text-white transition-colors"
-                  title="Attach file (Max 10MB, up to 5)"
-                >
-                  <Paperclip className="w-5 h-5" />
-                </button>
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowAttachMenu(!showAttachMenu)}
+                    className="p-3.5 text-zinc-400 hover:text-white transition-colors"
+                    title="Attach file"
+                  >
+                    <Paperclip className="w-5 h-5" />
+                  </button>
+                  
+                  <AnimatePresence>
+                    {showAttachMenu && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        className="absolute bottom-full left-0 mb-2 w-48 bg-[#1a1a1a] border border-white/10 rounded-xl shadow-xl overflow-hidden z-50"
+                      >
+                        <button 
+                          onClick={() => { setShowAttachMenu(false); fileInputRef.current?.click(); }}
+                          className="w-full flex items-center gap-2 px-4 py-3 text-sm text-zinc-300 hover:bg-white/5 transition-colors text-left"
+                        >
+                          <FileText className="w-4 h-4" /> Local Device
+                        </button>
+                        <button 
+                          onClick={() => { setShowAttachMenu(false); setShowFileManagerSelect(true); }}
+                          className="w-full flex items-center gap-2 px-4 py-3 text-sm text-zinc-300 hover:bg-white/5 transition-colors text-left border-t border-white/5"
+                        >
+                          <Folder className="w-4 h-4" /> File Manager
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
                 <textarea
                   ref={textareaRef}
                   value={input}
