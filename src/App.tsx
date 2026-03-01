@@ -22,8 +22,6 @@ import {
   saveConversationToDB, getConversationsFromDB, deleteConversationFromDB 
 } from './db';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 const THINKING_PROTOCOL = `
 GPT is able to think before and during responding:
 
@@ -670,7 +668,9 @@ export default function App() {
           result = data;
         }
       } else if (call.name === 'generateImage') {
-        const imageAi = new GoogleGenAI({ apiKey: currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY });
+        const key = currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY;
+        if (!key) throw new Error("Image API Key is missing. Please add it in Settings.");
+        const imageAi = new GoogleGenAI({ apiKey: key });
         const res = await imageAi.getGenerativeModel({
           model: call.args.model || 'gemini-2.5-flash-image',
         }).generateContent({
@@ -712,7 +712,9 @@ export default function App() {
         if (!lastImageBase64) {
           result = "No image found in conversation history to edit. Please upload an image first.";
         } else {
-          const imageAi = new GoogleGenAI({ apiKey: currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY });
+          const key = currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY;
+          if (!key) throw new Error("Image API Key is missing. Please add it in Settings.");
+          const imageAi = new GoogleGenAI({ apiKey: key });
           const res = await imageAi.getGenerativeModel({
             model: call.args.model || 'gemini-2.5-flash-image',
           }).generateContent({
@@ -739,7 +741,9 @@ export default function App() {
           }
         }
       } else if (call.name === 'generateAudio') {
-        const audioAi = new GoogleGenAI({ apiKey: currentSettings.apiKeys.audio[0] || process.env.GEMINI_API_KEY });
+        const key = currentSettings.apiKeys.audio[0] || process.env.GEMINI_API_KEY;
+        if (!key) throw new Error("Audio API Key is missing. Please add it in Settings.");
+        const audioAi = new GoogleGenAI({ apiKey: key });
         const res = await audioAi.getGenerativeModel({
           model: 'gemini-2.5-flash-preview-tts',
         }).generateContent({
@@ -1105,11 +1109,12 @@ export default function App() {
       }
 
       const apiKeyToUse = settings.apiKeys.text?.[0] || process.env.GEMINI_API_KEY;
-      if (!apiKeyToUse) {
-        throw new Error("API Key is missing. Please add your API key in Settings.");
+
+      if (!apiKeyToUse || apiKeyToUse.trim() === "") {
+        throw new Error("API Key is missing. Please add your Gemini API key in Settings (API Keys tab).");
       }
 
-      const aiInstance = new GoogleGenAI(apiKeyToUse);
+      const aiInstance = new GoogleGenAI({ apiKey: apiKeyToUse });
       const model = aiInstance.getGenerativeModel(modelConfig);
 
       const stream = await model.generateContentStream({
@@ -1521,7 +1526,9 @@ export default function App() {
       const configA = { systemInstruction: sysInst + "\n\nRespond with a highly concise, analytical, and direct tone.", tools: [{ functionDeclarations: activeTools }] };
       const configB = { systemInstruction: sysInst + "\n\nRespond with a warm, creative, and highly detailed tone.", tools: [{ functionDeclarations: activeTools }] };
 
-      const aiInstance = settings.apiKeys.text[0] ? new GoogleGenAI({ apiKey: settings.apiKeys.text[0] }) : ai;
+      const apiKeyToUse = settings.apiKeys.text?.[0] || process.env.GEMINI_API_KEY;
+      if (!apiKeyToUse) throw new Error("API Key is missing.");
+      const aiInstance = new GoogleGenAI({ apiKey: apiKeyToUse });
 
       const [resA, resB] = await Promise.all([
         aiInstance.getGenerativeModel({
