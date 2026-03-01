@@ -281,7 +281,7 @@ const AI_LEVELS = [
   { id: 'very-fast', name: 'Very Fast', model: 'gemini-1.5-flash-8b', inPrice: 0.075, outPrice: 0.30, icon: Zap, color: 'text-yellow-400', desc: 'Lowest latency, basic tasks', theme: { blob1: 'bg-yellow-500', blob2: 'bg-amber-500', blob3: 'bg-orange-500', border: 'border-yellow-500/30', focus: 'focus-within:border-yellow-500/60', bg: 'bg-yellow-600/80', bgLight: 'bg-yellow-600/10', text: 'text-yellow-400', isDangerous: false } },
   { id: 'fast', name: 'Fast', model: 'gemini-1.5-flash', inPrice: 0.075, outPrice: 0.30, icon: Zap, color: 'text-blue-400', desc: 'Balanced speed and capability', theme: { blob1: 'bg-blue-600', blob2: 'bg-cyan-600', blob3: 'bg-sky-600', border: 'border-blue-500/30', focus: 'focus-within:border-blue-500/60', bg: 'bg-blue-600/80', bgLight: 'bg-blue-600/10', text: 'text-blue-400', isDangerous: false } },
   { id: 'medium', name: 'Medium', model: 'gemini-1.5-pro', inPrice: 1.25, outPrice: 5.00, icon: Brain, color: 'text-purple-400', desc: 'High reasoning, standard speed', theme: { blob1: 'bg-purple-600', blob2: 'bg-fuchsia-600', blob3: 'bg-indigo-600', border: 'border-purple-500/30', focus: 'focus-within:border-purple-500/60', bg: 'bg-purple-600/80', bgLight: 'bg-purple-600/10', text: 'text-purple-400', isDangerous: false } },
-  { id: 'hard', name: 'Hard', model: 'gemini-2.0-flash-exp', inPrice: 0.075, outPrice: 0.30, icon: Flame, color: 'text-orange-400', desc: 'Advanced reasoning, fast', theme: { blob1: 'bg-orange-600', blob2: 'bg-red-500', blob3: 'bg-amber-600', border: 'border-orange-500/30', focus: 'focus-within:border-orange-500/60', bg: 'bg-orange-600/80', bgLight: 'bg-orange-600/10', text: 'text-orange-400', isDangerous: false } },
+  { id: 'hard', name: 'Hard', model: 'gemini-2.0-flash', inPrice: 0.075, outPrice: 0.30, icon: Flame, color: 'text-orange-400', desc: 'Advanced reasoning, fast', theme: { blob1: 'bg-orange-600', blob2: 'bg-red-500', blob3: 'bg-amber-600', border: 'border-orange-500/30', focus: 'focus-within:border-orange-500/60', bg: 'bg-orange-600/80', bgLight: 'bg-orange-600/10', text: 'text-orange-400', isDangerous: false } },
   { id: 'extreme', name: 'Extreme', model: 'gemini-2.0-pro-exp-02-05', inPrice: 1.25, outPrice: 5.00, icon: Rocket, color: 'text-red-500', desc: 'Maximum capability, complex tasks', theme: { blob1: 'bg-red-600', blob2: 'bg-rose-600', blob3: 'bg-red-700', border: 'border-red-500/50', focus: 'focus-within:border-red-500/80', bg: 'bg-red-600/80', bgLight: 'bg-red-600/20', text: 'text-red-400', isDangerous: true } },
   { id: 'new', name: 'New', model: 'gemini-2.0-flash-thinking-exp-01-21', inPrice: 1.25, outPrice: 5.00, icon: Sparkles, color: 'text-emerald-400', desc: 'Latest experimental model', theme: { blob1: 'bg-emerald-600', blob2: 'bg-teal-600', blob3: 'bg-green-600', border: 'border-emerald-500/30', focus: 'focus-within:border-emerald-500/60', bg: 'bg-emerald-600/80', bgLight: 'bg-emerald-600/10', text: 'text-emerald-400', isDangerous: true } },
 ];
@@ -511,7 +511,9 @@ export default function App() {
   const [selectedLevel, setSelectedLevel] = useState<string>('fast');
   const [showLevelSelector, setShowLevelSelector] = useState(false);
   const [thinkingEnabled, setThinkingEnabled] = useState(() => {
-    return localStorage.getItem('inex_thinking_enabled') === 'true';
+    const saved = localStorage.getItem('inex_thinking_enabled');
+    // If we have a saved value, use it. Otherwise, default to true if it's the first time.
+    return saved !== null ? saved === 'true' : true;
   });
 
   useEffect(() => {
@@ -671,8 +673,8 @@ export default function App() {
         const key = currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY;
         if (!key) throw new Error("Image API Key is missing. Please add it in Settings.");
         const imageAi = new GoogleGenAI(key);
-        const res = await imageAi.models.generateContent({
-          model: call.args.model || 'gemini-2.5-flash-image',
+        const model = imageAi.getGenerativeModel({ model: call.args.model || 'gemini-2.5-flash-image' });
+        const res = await model.generateContent({
           contents: [{ role: 'user', parts: [{ text: call.args.prompt }] }],
         });
         let base64Image = '';
@@ -714,8 +716,8 @@ export default function App() {
           const key = currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY;
           if (!key) throw new Error("Image API Key is missing. Please add it in Settings.");
           const imageAi = new GoogleGenAI(key);
-          const res = await imageAi.models.generateContent({
-            model: call.args.model || 'gemini-2.5-flash-image',
+          const model = imageAi.getGenerativeModel({ model: call.args.model || 'gemini-2.5-flash-image' });
+          const res = await model.generateContent({
             contents: [{
               role: 'user',
               parts: [
@@ -742,10 +744,10 @@ export default function App() {
         const key = currentSettings.apiKeys.audio[0] || process.env.GEMINI_API_KEY;
         if (!key) throw new Error("Audio API Key is missing. Please add it in Settings.");
         const audioAi = new GoogleGenAI(key);
-        const res = await audioAi.models.generateContent({
-          model: 'gemini-2.5-flash-preview-tts',
+        const model = audioAi.getGenerativeModel({ model: 'gemini-2.5-flash-preview-tts' });
+        const res = await model.generateContent({
           contents: [{ role: 'user', parts: [{ text: call.args.text }] }],
-          config: {
+          generationConfig: {
             responseModalities: ['AUDIO'],
             speechConfig: {
               voiceConfig: {
@@ -753,7 +755,7 @@ export default function App() {
               }
             }
           }
-        });
+        } as any);
         const base64Audio = res.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
         if (base64Audio) {
           try {
@@ -954,7 +956,10 @@ export default function App() {
     const totalTokenCost = inputTokensCost + outputTokensCost;
 
     if (call.name === 'urlFetch') {
-      costToAdd = (totalTokenCost + 0.001) * 1.1;
+      // cost: (input tokens cost + output tokens cost + understand response cost + $0.001) + 10%
+      // understand response cost is essentially output tokens cost again as it's fed back to AI
+      const understandCost = getTokenCost(outputTokens);
+      costToAdd = (totalTokenCost + understandCost + 0.001) * 1.1;
     } else if (call.name === 'webSearch') {
       costToAdd = (0.01 + totalTokenCost) * 1.1;
       if (currentSettings.apiKeys.search[0]) costToAdd = totalTokenCost * 1.1;
@@ -990,7 +995,8 @@ export default function App() {
   };
 
   const runAI = async (convId: string, history: Message[], isRecursive = false) => {
-    if (!settings.apiKeys.text[0] && balance <= 0) {
+    const currentSettings = settingsRef.current;
+    if (!currentSettings.apiKeys.text[0] && balance <= 0) {
       console.log("No balance, showing add funds");
       setShowAddFunds(true);
       setIsLoading(false);
@@ -1060,29 +1066,30 @@ export default function App() {
 
       const today = new Date().toISOString().split('T')[0];
       let sysInst = `You are INEX Agent, an advanced AI assistant. Format your responses using markdown.\nToday's Date: ${today}\n`;
-      if (settings.name) sysInst += `User Name: ${settings.name}\n`;
-      if (settings.email) sysInst += `User Email: ${settings.email}\n`;
-      if (settings.phoneNumber) sysInst += `User Phone Number: ${settings.phoneNumber}\n`;
-      if (settings.birthDate) sysInst += `User Birth Date: ${settings.birthDate}. Calculate their current age based on today's date. If they ask for age + 5, calculate it accordingly.\n`;
-      if (settings.instructions) sysInst += `User Instructions: ${settings.instructions}\n`;
+      if (currentSettings.name) sysInst += `User Name: ${currentSettings.name}\n`;
+      if (currentSettings.email) sysInst += `User Email: ${currentSettings.email}\n`;
+      if (currentSettings.phoneNumber) sysInst += `User Phone Number: ${currentSettings.phoneNumber}\n`;
+      if (currentSettings.birthDate) sysInst += `User Birth Date: ${currentSettings.birthDate}. Calculate their current age based on today's date. If they ask for age + 5, calculate it accordingly.\n`;
+      if (currentSettings.instructions) sysInst += `User Instructions: ${currentSettings.instructions}\n`;
       if (thinkingEnabled && !selectedLevelObj.model.includes('thinking')) {
         sysInst += `\n${THINKING_PROTOCOL}\n`;
+        sysInst += `\nIMPORTANT: You MUST always begin your response with a \`\`\`thinking\`\`\` block.\n`;
       }
       
-      if (settings.memoryEnabled) {
+      if (currentSettings.memoryEnabled) {
         sysInst += `\nCRITICAL INSTRUCTION FOR MEMORY: You MUST automatically use the 'saveMemory' tool to save any new personal facts, preferences, phone numbers, or details the user mentions about themselves. Do this proactively without asking for permission.\n`;
-        if (settings.memories && settings.memories.length > 0) {
+        if (currentSettings.memories && currentSettings.memories.length > 0) {
           sysInst += `\nUser Memories (You can use tools to add/update/delete these):\n`;
-          settings.memories.forEach(m => { sysInst += `- [ID: ${m.id}] ${m.content}\n`; });
+          currentSettings.memories.forEach(m => { if (m && m.content) sysInst += `- [ID: ${m.id}] ${m.content}\n`; });
         }
       }
-      if (settings.preferences && settings.preferences.length > 0) {
+      if (currentSettings.preferences && currentSettings.preferences.length > 0) {
         sysInst += `\nUser Communication Preferences:\n`;
-        settings.preferences.forEach(p => { sysInst += `- ${p}\n`; });
+        currentSettings.preferences.forEach(p => { sysInst += `- ${p}\n`; });
       }
 
       const activeTools = [calculatorTool, webSearchTool, imageGenerationTool, imageEditTool, audioGenerationTool, createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool];
-      if (settings.memoryEnabled) {
+      if (currentSettings.memoryEnabled) {
         activeTools.push(saveMemoryTool, updateMemoryTool, deleteMemoryTool);
       }
       activeTools.push(urlFetchTool, copyFileTool, moveFileTool);
@@ -1105,13 +1112,13 @@ export default function App() {
         }
       }
 
-      const apiKeyToUse = settings.apiKeys.text?.[0] || process.env.GEMINI_API_KEY;
+      const apiKeyToUse = currentSettings.apiKeys.text?.[0] || process.env.GEMINI_API_KEY;
 
       if (!apiKeyToUse || apiKeyToUse.trim() === "") {
         throw new Error("API Key is missing. Please add your Gemini API key in Settings (API Keys tab).");
       }
 
-      const aiInstance = new GoogleGenAI({ apiKey: apiKeyToUse });
+      const aiInstance = new GoogleGenAI({ apiKey: apiKeyToUse, apiVersion: 'v1beta' });
 
       const config: any = {
         model: selectedLevelObj.model,
@@ -1123,7 +1130,8 @@ export default function App() {
         config.tools = [{ functionDeclarations: activeTools }];
       }
 
-      const stream = await aiInstance.models.generateContentStream(config);
+      const model = aiInstance.getGenerativeModel({ model: selectedLevelObj.model });
+      const stream = await model.generateContentStream(config);
 
       let currentText = '';
       let pTokens = 0;
@@ -1322,7 +1330,7 @@ export default function App() {
 
       const totalTokens = pTokens + cTokens;
       const cost = (pTokens * (selectedLevelObj.inPrice / 1000000)) + (cTokens * (selectedLevelObj.outPrice / 1000000));
-      const finalCost = settings.apiKeys.text[0] ? 0 : cost * 1.1; // Add 10%
+      const finalCost = currentSettings.apiKeys.text[0] ? 0 : cost * 1.1; // Add 10%
 
       if (finalCost > 0) {
         logBalanceChange(-finalCost, `AI Response (${selectedLevelObj.name})`);
@@ -1362,7 +1370,7 @@ export default function App() {
         }));
       } else {
         console.error("Error sending message:", error);
-        let errorMsg = 'An error occurred while generating the response. Please try again or select a different model.';
+        let errorMsg = '';
         if (error?.message?.includes('maximum number of tokens allowed') || error?.message?.includes('exceeds the maximum')) {
           errorMsg = 'Error: The input token count exceeds the maximum allowed by this model (1,048,576 tokens). Please start a new conversation or remove some attachments.';
         }
@@ -1372,8 +1380,8 @@ export default function App() {
               ...c,
               messages: c.messages.map(m => m.id === modelMessageId ? { 
                 ...m, 
-                text: `${errorMsg}\n\n*Error details: ${error.message || 'Unknown error'}*`,
-                status: 'error'
+                text: errorMsg ? `${errorMsg}\n\n*Error details: ${error.message || 'Unknown error'}*` : '',
+                status: errorMsg ? 'error' as MessageStatus : 'processing' as MessageStatus
               } : m)
             };
           }
@@ -1521,7 +1529,7 @@ export default function App() {
         sysInst += `\nCRITICAL INSTRUCTION FOR MEMORY: You MUST automatically use the 'saveMemory' tool to save any new personal facts, preferences, phone numbers, or details the user mentions about themselves. Do this proactively without asking for permission.\n`;
         if (settings.memories && settings.memories.length > 0) {
           sysInst += `\nUser Memories:\n`;
-          settings.memories.forEach(m => { sysInst += `- [ID: ${m.id}] ${m.content}\n`; });
+          settings.memories.forEach(m => { if (m && m.content) sysInst += `- [ID: ${m.id}] ${m.content}\n`; });
         }
       }
       if (settings.preferences && settings.preferences.length > 0) {
@@ -1539,21 +1547,22 @@ export default function App() {
 
       const apiKeyToUse = settings.apiKeys.text?.[0] || process.env.GEMINI_API_KEY;
       if (!apiKeyToUse) throw new Error("API Key is missing.");
-      const aiInstance = new GoogleGenAI({ apiKey: apiKeyToUse });
+      const aiInstance = new GoogleGenAI({ apiKey: apiKeyToUse, apiVersion: 'v1beta' });
+
+      const modelA = aiInstance.getGenerativeModel({
+        model: selectedLevelObj.model,
+        systemInstruction: configA.systemInstruction,
+        tools: [{ functionDeclarations: activeTools }]
+      });
+      const modelB = aiInstance.getGenerativeModel({
+        model: selectedLevelObj.model,
+        systemInstruction: configB.systemInstruction,
+        tools: [{ functionDeclarations: activeTools }]
+      });
 
       const [resA, resB] = await Promise.all([
-        aiInstance.models.generateContent({
-          model: selectedLevelObj.model,
-          systemInstruction: configA.systemInstruction,
-          tools: [{ functionDeclarations: activeTools }],
-          contents
-        }),
-        aiInstance.models.generateContent({
-          model: selectedLevelObj.model,
-          systemInstruction: configB.systemInstruction,
-          tools: [{ functionDeclarations: activeTools }],
-          contents
-        })
+        modelA.generateContent({ contents }),
+        modelB.generateContent({ contents })
       ]);
 
       setConversations(prev => prev.map(c => c.id === convId ? {
@@ -2109,14 +2118,18 @@ export default function App() {
               return b.updatedAt - a.updatedAt;
             });
 
-            const groups: { [key: string]: Conversation[] } = {};
+            const groups: { date: string, convs: Conversation[] }[] = [];
             sorted.forEach(c => {
-              const date = formatDate(c.updatedAt);
-              if (!groups[date]) groups[date] = [];
-              groups[date].push(c);
+              const dateLabel = formatDate(c.updatedAt);
+              const existingGroup = groups.find(g => g.date === dateLabel);
+              if (existingGroup) {
+                existingGroup.convs.push(c);
+              } else {
+                groups.push({ date: dateLabel, convs: [c] });
+              }
             });
 
-            return Object.entries(groups).map(([date, convs]) => (
+            return groups.map(({ date, convs }) => (
               <div key={date} className="space-y-1 mt-4">
                 <div className="px-3 py-1.5 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{date}</div>
                 {convs.map(conv => (
@@ -2467,7 +2480,7 @@ export default function App() {
             )}
 
             <div className="flex items-end gap-2 md:gap-3">
-              <div className={`flex-1 rounded-2xl md:rounded-3xl border transition-colors flex items-end bg-black/40 backdrop-blur-md ${theme.border} ${theme.focus}`}>
+              <div className={`flex-1 rounded-2xl md:rounded-3xl border transition-colors flex items-end bg-black/40 backdrop-blur-md pr-2 ${theme.border} ${theme.focus}`}>
                 <input 
                   type="file" 
                   multiple 
@@ -2518,42 +2531,42 @@ export default function App() {
                   }}
                   onKeyDown={handleKeyDown}
                   placeholder="Message..."
-                  className="w-full bg-transparent pr-4 py-3 md:py-3.5 max-h-[120px] text-[15px] text-zinc-200 placeholder-zinc-500 focus:outline-none resize-none hide-scrollbar"
+                  className="flex-1 bg-transparent py-3 md:py-3.5 max-h-[120px] text-[15px] text-zinc-200 placeholder-zinc-500 focus:outline-none resize-none hide-scrollbar"
                   rows={1}
                   disabled={isLoading}
                 />
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setThinkingEnabled(!thinkingEnabled)}
-                  className={`p-3 md:p-3.5 rounded-full transition-all active:scale-95 border ${thinkingEnabled ? 'bg-blue-600/20 border-blue-500/50 text-blue-400 shadow-[0_0_15px_rgba(37,99,235,0.2)]' : 'bg-white/5 border-white/10 text-zinc-500 hover:text-zinc-400'}`}
-                  title="Toggle Thinking Mode"
-                >
-                  <Brain className={`w-5 h-5 ${thinkingEnabled ? 'animate-pulse' : ''}`} />
-                </button>
 
-                {isLoading ? (
+                <div className="flex items-center pb-2 md:pb-2.5 gap-1">
                   <button
-                    onClick={handleStopGeneration}
-                    className="p-3 md:p-3.5 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 bg-white/10 text-white hover:bg-white/20 border border-white/10 shadow-lg"
-                    title="Stop generating"
+                    onClick={() => setThinkingEnabled(!thinkingEnabled)}
+                    className={`p-2 rounded-xl transition-all active:scale-95 ${thinkingEnabled ? 'bg-blue-600/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-400'}`}
+                    title="Toggle Thinking Mode"
                   >
-                    <Square className="w-5 h-5 fill-current" />
+                    <Brain className={`w-5 h-5 ${thinkingEnabled ? 'animate-pulse' : ''}`} />
                   </button>
-                ) : (
-                  <button
-                    onClick={handleSend}
-                    disabled={(!input.trim() && attachments.length === 0) || isLoading}
-                    className={`p-3 md:p-3.5 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 ${
-                      (input.trim() || attachments.length > 0) && !isLoading
-                        ? `${theme.blob1} text-white shadow-lg shadow-black/50`
-                        : 'bg-white/5 text-zinc-600 border border-white/10'
-                    }`}
-                  >
-                    <Send className="w-5 h-5 ml-0.5" />
-                  </button>
-                )}
+
+                  {isLoading ? (
+                    <button
+                      onClick={handleStopGeneration}
+                      className="p-2 rounded-xl flex items-center justify-center shrink-0 transition-all active:scale-95 text-white hover:bg-white/10"
+                      title="Stop generating"
+                    >
+                      <Square className="w-5 h-5 fill-current" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleSend}
+                      disabled={(!input.trim() && attachments.length === 0) || isLoading}
+                      className={`p-2 rounded-xl flex items-center justify-center shrink-0 transition-all active:scale-95 ${
+                        (input.trim() || attachments.length > 0) && !isLoading
+                          ? `text-white ${theme.text}`
+                          : 'text-zinc-600'
+                      }`}
+                    >
+                      <Send className="w-5 h-5" />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>

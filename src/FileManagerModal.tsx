@@ -242,13 +242,13 @@ export default function FileManagerModal({ files, onAddFile, onUpdateFile, onDel
   const handleCopy = (file: FileNode, e: React.MouseEvent) => {
     e.stopPropagation();
     setCopyingNode(file);
-    alert(`Select destination folder and click "Paste Here" (top right)`);
+    if (onError) onError(`Select destination folder and click "Paste Here"`);
   };
 
   const handleMove = (file: FileNode, e: React.MouseEvent) => {
     e.stopPropagation();
     setMovingNode(file);
-    alert(`Select destination folder and click "Move Here" (top right)`);
+    if (onError) onError(`Select destination folder and click "Move Here"`);
   };
 
   const executePaste = () => {
