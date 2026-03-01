@@ -25,12 +25,12 @@ import {
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 const AI_LEVELS = [
-  { id: 'very-fast', name: 'Very Fast', model: 'gemini-flash-lite-latest', inPrice: 0.075, outPrice: 0.30, icon: Zap, color: 'text-yellow-400', desc: 'Lowest latency, basic tasks', theme: { blob1: 'bg-yellow-500', blob2: 'bg-amber-500', blob3: 'bg-orange-500', border: 'border-yellow-500/30', focus: 'focus-within:border-yellow-500/60', bg: 'bg-yellow-600/80', bgLight: 'bg-yellow-600/10', text: 'text-yellow-400', isDangerous: false } },
-  { id: 'fast', name: 'Fast', model: 'gemini-2.5-flash', inPrice: 0.075, outPrice: 0.30, icon: Zap, color: 'text-blue-400', desc: 'Balanced speed and capability', theme: { blob1: 'bg-blue-600', blob2: 'bg-cyan-600', blob3: 'bg-sky-600', border: 'border-blue-500/30', focus: 'focus-within:border-blue-500/60', bg: 'bg-blue-600/80', bgLight: 'bg-blue-600/10', text: 'text-blue-400', isDangerous: false } },
-  { id: 'medium', name: 'Medium', model: 'gemini-2.5-pro', inPrice: 1.25, outPrice: 5.00, icon: Brain, color: 'text-purple-400', desc: 'High reasoning, standard speed', theme: { blob1: 'bg-purple-600', blob2: 'bg-fuchsia-600', blob3: 'bg-indigo-600', border: 'border-purple-500/30', focus: 'focus-within:border-purple-500/60', bg: 'bg-purple-600/80', bgLight: 'bg-purple-600/10', text: 'text-purple-400', isDangerous: false } },
-  { id: 'hard', name: 'Hard', model: 'gemini-3-flash-preview', inPrice: 0.075, outPrice: 0.30, icon: Flame, color: 'text-orange-400', desc: 'Advanced reasoning, fast', theme: { blob1: 'bg-orange-600', blob2: 'bg-red-500', blob3: 'bg-amber-600', border: 'border-orange-500/30', focus: 'focus-within:border-orange-500/60', bg: 'bg-orange-600/80', bgLight: 'bg-orange-600/10', text: 'text-orange-400', isDangerous: false } },
-  { id: 'extreme', name: 'Extreme', model: 'gemini-3-pro-preview', inPrice: 1.25, outPrice: 5.00, icon: Rocket, color: 'text-red-500', desc: 'Maximum capability, complex tasks', theme: { blob1: 'bg-red-600', blob2: 'bg-rose-600', blob3: 'bg-red-700', border: 'border-red-500/50', focus: 'focus-within:border-red-500/80', bg: 'bg-red-600/80', bgLight: 'bg-red-600/20', text: 'text-red-400', isDangerous: true } },
-  { id: 'new', name: 'New', model: 'gemini-3.1-pro-preview', inPrice: 1.25, outPrice: 5.00, icon: Sparkles, color: 'text-emerald-400', desc: 'Latest experimental model', theme: { blob1: 'bg-emerald-600', blob2: 'bg-teal-600', blob3: 'bg-green-600', border: 'border-emerald-500/30', focus: 'focus-within:border-emerald-500/60', bg: 'bg-emerald-600/80', bgLight: 'bg-emerald-600/10', text: 'text-emerald-400', isDangerous: true } },
+  { id: 'very-fast', name: 'Very Fast', model: 'gemini-1.5-flash-8b', inPrice: 0.075, outPrice: 0.30, icon: Zap, color: 'text-yellow-400', desc: 'Lowest latency, basic tasks', theme: { blob1: 'bg-yellow-500', blob2: 'bg-amber-500', blob3: 'bg-orange-500', border: 'border-yellow-500/30', focus: 'focus-within:border-yellow-500/60', bg: 'bg-yellow-600/80', bgLight: 'bg-yellow-600/10', text: 'text-yellow-400', isDangerous: false } },
+  { id: 'fast', name: 'Fast', model: 'gemini-1.5-flash', inPrice: 0.075, outPrice: 0.30, icon: Zap, color: 'text-blue-400', desc: 'Balanced speed and capability', theme: { blob1: 'bg-blue-600', blob2: 'bg-cyan-600', blob3: 'bg-sky-600', border: 'border-blue-500/30', focus: 'focus-within:border-blue-500/60', bg: 'bg-blue-600/80', bgLight: 'bg-blue-600/10', text: 'text-blue-400', isDangerous: false } },
+  { id: 'medium', name: 'Medium', model: 'gemini-1.5-pro', inPrice: 1.25, outPrice: 5.00, icon: Brain, color: 'text-purple-400', desc: 'High reasoning, standard speed', theme: { blob1: 'bg-purple-600', blob2: 'bg-fuchsia-600', blob3: 'bg-indigo-600', border: 'border-purple-500/30', focus: 'focus-within:border-purple-500/60', bg: 'bg-purple-600/80', bgLight: 'bg-purple-600/10', text: 'text-purple-400', isDangerous: false } },
+  { id: 'hard', name: 'Hard', model: 'gemini-2.0-flash-exp', inPrice: 0.075, outPrice: 0.30, icon: Flame, color: 'text-orange-400', desc: 'Advanced reasoning, fast', theme: { blob1: 'bg-orange-600', blob2: 'bg-red-500', blob3: 'bg-amber-600', border: 'border-orange-500/30', focus: 'focus-within:border-orange-500/60', bg: 'bg-orange-600/80', bgLight: 'bg-orange-600/10', text: 'text-orange-400', isDangerous: false } },
+  { id: 'extreme', name: 'Extreme', model: 'gemini-2.0-pro-exp-02-05', inPrice: 1.25, outPrice: 5.00, icon: Rocket, color: 'text-red-500', desc: 'Maximum capability, complex tasks', theme: { blob1: 'bg-red-600', blob2: 'bg-rose-600', blob3: 'bg-red-700', border: 'border-red-500/50', focus: 'focus-within:border-red-500/80', bg: 'bg-red-600/80', bgLight: 'bg-red-600/20', text: 'text-red-400', isDangerous: true } },
+  { id: 'new', name: 'New', model: 'gemini-2.0-flash-thinking-exp-01-21', inPrice: 1.25, outPrice: 5.00, icon: Sparkles, color: 'text-emerald-400', desc: 'Latest experimental model', theme: { blob1: 'bg-emerald-600', blob2: 'bg-teal-600', blob3: 'bg-green-600', border: 'border-emerald-500/30', focus: 'focus-within:border-emerald-500/60', bg: 'bg-emerald-600/80', bgLight: 'bg-emerald-600/10', text: 'text-emerald-400', isDangerous: true } },
 ];
 
 const ThinkingBlock = ({ children }: { children: React.ReactNode }) => {
@@ -416,9 +416,10 @@ export default function App() {
         }
       } else if (call.name === 'generateImage') {
         const imageAi = new GoogleGenAI({ apiKey: currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY });
-        const res = await imageAi.models.generateContent({
+        const res = await imageAi.getGenerativeModel({
           model: call.args.model || 'gemini-2.5-flash-image',
-          contents: call.args.prompt,
+        }).generateContent({
+          contents: [{ role: 'user', parts: [{ text: call.args.prompt }] }],
         });
         let base64Image = '';
         for (const part of res.candidates?.[0]?.content?.parts || []) {
@@ -457,14 +458,16 @@ export default function App() {
           result = "No image found in conversation history to edit. Please upload an image first.";
         } else {
           const imageAi = new GoogleGenAI({ apiKey: currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY });
-          const res = await imageAi.models.generateContent({
+          const res = await imageAi.getGenerativeModel({
             model: call.args.model || 'gemini-2.5-flash-image',
-            contents: {
+          }).generateContent({
+            contents: [{
+              role: 'user',
               parts: [
                 { inlineData: { data: lastImageBase64, mimeType: lastImageMime } },
                 { text: call.args.prompt }
               ]
-            }
+            }]
           });
           
           let base64Image = '';
@@ -482,10 +485,11 @@ export default function App() {
         }
       } else if (call.name === 'generateAudio') {
         const audioAi = new GoogleGenAI({ apiKey: currentSettings.apiKeys.audio[0] || process.env.GEMINI_API_KEY });
-        const res = await audioAi.models.generateContent({
+        const res = await audioAi.getGenerativeModel({
           model: 'gemini-2.5-flash-preview-tts',
-          contents: call.args.text,
-          config: {
+        }).generateContent({
+          contents: [{ role: 'user', parts: [{ text: call.args.text }] }],
+          generationConfig: {
             responseModalities: ['AUDIO'],
             speechConfig: {
               voiceConfig: {
@@ -731,7 +735,9 @@ export default function App() {
 
   const runAI = async (convId: string, history: Message[], isRecursive = false) => {
     if (!settings.apiKeys.text[0] && balance <= 0) {
+      console.log("No balance, showing add funds");
       setShowAddFunds(true);
+      setIsLoading(false);
       return;
     }
 
@@ -751,37 +757,50 @@ export default function App() {
     const startTime = Date.now();
 
     try {
-      const contents = history.map(m => {
-        if (m.role === 'model' && m.pendingToolCall) {
-          return {
-            role: 'model',
-            parts: [{ text: m.text ? m.text : `[Action: Calling tool ${m.pendingToolCall.name}]` }]
-          };
-        }
-        if (m.role === 'function' && m.toolResult) {
-          let resultText = '';
-          if (m.toolResult.result?.audioBase64) {
-            resultText = '[Audio Generated Successfully]';
-          } else if (m.toolResult.result?.imageBase64) {
-            resultText = '[Image Generated Successfully]';
-          } else {
-            resultText = typeof m.toolResult.result === 'string' ? m.toolResult.result : JSON.stringify(m.toolResult.result);
-          }
-          return {
-            role: 'user',
-            parts: [{ text: `[Tool Response from ${m.toolResult.name}]:\n${resultText}` }]
-          };
-        }
-        
+      const sanitizedContents: any[] = [];
+      let lastRole: string | null = null;
+
+      history.forEach(m => {
         const parts: any[] = [];
-        if (m.text) parts.push({ text: m.text });
-        if (m.attachments) {
-          m.attachments.forEach(att => {
-            parts.push({ inlineData: { data: att.base64, mimeType: att.mimeType } });
+
+        if (m.role === 'model' && m.pendingToolCall) {
+          parts.push({
+            functionCall: {
+              name: m.pendingToolCall.name,
+              args: m.pendingToolCall.args
+            }
           });
+        } else if (m.role === 'function' && m.toolResult) {
+          parts.push({
+            functionResponse: {
+              name: m.toolResult.name,
+              response: { result: m.toolResult.result }
+            }
+          });
+        } else {
+          if (m.text) parts.push({ text: m.text });
+          if (m.attachments) {
+            m.attachments.forEach(att => {
+              parts.push({ inlineData: { data: att.base64, mimeType: att.mimeType } });
+            });
+          }
         }
-        return { role: m.role, parts };
+
+        if (parts.length === 0) return;
+
+        const role = m.role;
+
+        if (role === lastRole && role !== 'function') {
+          sanitizedContents[sanitizedContents.length - 1].parts.push(...parts);
+        } else {
+          sanitizedContents.push({ role, parts });
+          lastRole = role;
+        }
       });
+
+      if (sanitizedContents.length === 0) {
+        throw new Error("No content to send to AI");
+      }
 
       const today = new Date().toISOString().split('T')[0];
       let sysInst = `You are INEX Agent, an advanced AI assistant. Format your responses using markdown.\nToday's Date: ${today}\n`;
@@ -790,7 +809,7 @@ export default function App() {
       if (settings.phoneNumber) sysInst += `User Phone Number: ${settings.phoneNumber}\n`;
       if (settings.birthDate) sysInst += `User Birth Date: ${settings.birthDate}. Calculate their current age based on today's date. If they ask for age + 5, calculate it accordingly.\n`;
       if (settings.instructions) sysInst += `User Instructions: ${settings.instructions}\n`;
-      if (thinkingEnabled) {
+      if (thinkingEnabled && !selectedLevelObj.model.includes('thinking')) {
         sysInst += `\n${THINKING_PROTOCOL}\n`;
       }
       
@@ -812,17 +831,34 @@ export default function App() {
       }
       activeTools.push(urlFetchTool, copyFileTool, moveFileTool);
 
-      const config: any = {
-        systemInstruction: sysInst,
-        tools: [{ functionDeclarations: activeTools }]
+      const isThinkingModel = selectedLevelObj.model.includes('thinking');
+
+      const modelConfig: any = {
+        model: selectedLevelObj.model,
       };
 
-      const aiInstance = settings.apiKeys.text[0] ? new GoogleGenAI({ apiKey: settings.apiKeys.text[0] }) : ai;
+      if (!isThinkingModel) {
+        modelConfig.systemInstruction = { parts: [{ text: sysInst }] };
+        modelConfig.tools = [{ functionDeclarations: activeTools }];
+      } else {
+        // Move system instruction to first message for thinking models
+        if (sanitizedContents[0].role === 'user') {
+          sanitizedContents[0].parts.unshift({ text: sysInst + "\n\n" });
+        } else {
+          sanitizedContents.unshift({ role: 'user', parts: [{ text: sysInst }] });
+        }
+      }
 
-      const stream = await aiInstance.models.generateContentStream({
-        model: selectedLevelObj.model,
-        contents: contents,
-        config: config
+      const apiKeyToUse = settings.apiKeys.text?.[0] || process.env.GEMINI_API_KEY;
+      if (!apiKeyToUse) {
+        throw new Error("API Key is missing. Please add your API key in Settings.");
+      }
+
+      const aiInstance = new GoogleGenAI(apiKeyToUse);
+      const model = aiInstance.getGenerativeModel(modelConfig);
+
+      const stream = await model.generateContentStream({
+        contents: sanitizedContents
       });
 
       let currentText = '';
@@ -837,23 +873,23 @@ export default function App() {
           break;
         }
 
-        if (chunk.text) {
-          currentText += chunk.text;
+        try {
+          const chunkText = chunk.text();
+          if (chunkText) {
+            currentText += chunkText;
+          }
+        } catch (e) {}
+
+        const usage = chunk.usageMetadata;
+        if (usage) {
+          pTokens = usage.promptTokenCount || pTokens;
+          cTokens = usage.candidatesTokenCount || cTokens;
         }
 
-        // @ts-ignore
-        if (chunk.usageMetadata) {
-          // @ts-ignore
-          pTokens = chunk.usageMetadata.promptTokenCount || pTokens;
-          // @ts-ignore
-          cTokens = chunk.usageMetadata.candidatesTokenCount || cTokens;
-        }
-
-        // @ts-ignore
-        if (chunk.functionCalls && chunk.functionCalls.length > 0) {
-          // @ts-ignore
-          functionCallFound = chunk.functionCalls[0];
-          break; // Stop processing, need user approval
+        const calls = chunk.functionCalls();
+        if (calls && calls.length > 0) {
+          functionCallFound = calls[0];
+          break;
         }
 
         setConversations(prev => prev.map(c => {
@@ -1065,7 +1101,7 @@ export default function App() {
               ...c,
               messages: c.messages.map(m => m.id === modelMessageId ? { 
                 ...m, 
-                text: errorMsg,
+                text: `${errorMsg}\n\n*Error details: ${error.message || 'Unknown error'}*`,
                 status: 'error'
               } : m)
             };
@@ -1233,8 +1269,16 @@ export default function App() {
       const aiInstance = settings.apiKeys.text[0] ? new GoogleGenAI({ apiKey: settings.apiKeys.text[0] }) : ai;
 
       const [resA, resB] = await Promise.all([
-        aiInstance.models.generateContent({ model: selectedLevelObj.model, contents, config: configA }),
-        aiInstance.models.generateContent({ model: selectedLevelObj.model, contents, config: configB })
+        aiInstance.getGenerativeModel({
+          model: selectedLevelObj.model,
+          systemInstruction: configA.systemInstruction,
+          tools: configA.tools,
+        }).generateContent({ contents }),
+        aiInstance.getGenerativeModel({
+          model: selectedLevelObj.model,
+          systemInstruction: configB.systemInstruction,
+          tools: configB.tools,
+        }).generateContent({ contents })
       ]);
 
       setConversations(prev => prev.map(c => c.id === convId ? {
@@ -1243,8 +1287,8 @@ export default function App() {
           ...m,
           status: 'waiting_variant_selection',
           variants: [
-            { id: 'A', text: resA.text || 'No response', tone: 'Concise & Analytical' },
-            { id: 'B', text: resB.text || 'No response', tone: 'Warm & Detailed' }
+            { id: 'A', text: resA.response.text() || 'No response', tone: 'Concise & Analytical' },
+            { id: 'B', text: resB.response.text() || 'No response', tone: 'Warm & Detailed' }
           ]
         } : m)
       } : c));

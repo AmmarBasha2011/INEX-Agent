@@ -5,3 +5,23 @@
 Server running on http://localhost:3000
 11:30:16 PM [vite] (client) page reload package.json
 11:30:16 PM [vite] (client) page reload server_log.txt
+11:58:06 PM [vite] (client) hmr update /src/App.tsx, /src/index.css
+11:58:06 PM [vite] (client) page reload server_log.txt
+11:58:20 PM [vite] (client) hmr update /src/App.tsx, /src/index.css
+11:58:20 PM [vite] (client) page reload server_log.txt
+11:58:57 PM [vite] (client) hmr update /src/App.tsx, /src/index.css
+11:58:57 PM [vite] (client) page reload server_log.txt
+11:59:50 PM [vite] (client) hmr update /src/App.tsx, /src/index.css
+11:59:50 PM [vite] (client) page reload server_log.txt
+12:01:20 AM [vite] (client) hmr update /src/App.tsx, /src/index.css
+12:01:20 AM [vite] (client) page reload server_log.txt
+12:01:22 AM [vite] (client) hmr update /src/App.tsx, /src/index.css
+12:01:22 AM [vite] (client) page reload server_log.txt
+12:01:26 AM [vite] (client) hmr update /src/App.tsx, /src/index.css
+12:01:26 AM [vite] (client) page reload server_log.txt
+12:01:29 AM [vite] (client) hmr update /src/App.tsx, /src/index.css
+12:01:29 AM [vite] (client) page reload server_log.txt
+12:01:45 AM [vite] (client) hmr update /src/App.tsx, /src/index.css
+12:01:45 AM [vite] (client) page reload server_log.txt
+12:03:24 AM [vite] (client) hmr update /src/App.tsx, /src/index.css
+12:03:24 AM [vite] (client) page reload server_log.txt
