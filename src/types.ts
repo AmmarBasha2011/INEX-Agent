@@ -33,6 +33,7 @@ export type Message = {
   toolResult?: { id?: string, name: string, result: any, cost?: number };
   attachments?: { name: string, mimeType: string, base64: string }[];
   variants?: { id: string, text: string, tone: string }[];
+  thinking?: string;
 };
 
 export type Conversation = {
@@ -42,4 +43,5 @@ export type Conversation = {
   updatedAt: number;
   pinned?: boolean;
   mode?: 'manual' | 'auto';
+  thinkingEnabled?: boolean;
 };

@@ -12,12 +12,28 @@ async function startServer() {
     try {
       const { query, apiKey } = req.body;
       const keyToUse = (apiKey && apiKey.length > 0) ? apiKey : "c477d856da8f9be3f08ebe14b7eddcb5ce0976318c660bca4b1133e2122b4190";
-      const response = await fetch(`https://serpapi.com/search.json?q=${encodeURIComponent(query)}&api_key=${keyToUse}`);
+      const response = await fetch(`https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(query)}&api_key=${keyToUse}`);
       const data = await response.json();
-      res.json(data);
-    } catch (error) {
+      if (data.error) {
+        res.status(400).json(data);
+      } else {
+        res.json(data);
+      }
+    } catch (error: any) {
       console.error("Search API Error:", error);
       res.status(500).json({ error: "Search failed" });
+    }
+  });
+
+  app.post("/api/fetch", async (req, res) => {
+    try {
+      const { url } = req.body;
+      const response = await fetch(url);
+      const text = await response.text();
+      res.json({ content: text });
+    } catch (error) {
+      console.error("Fetch API Error:", error);
+      res.status(500).json({ error: "Fetch failed" });
     }
   });
 
