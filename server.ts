@@ -21,6 +21,18 @@ async function startServer() {
     }
   });
 
+  app.post("/api/fetch", async (req, res) => {
+    try {
+      const { url } = req.body;
+      const response = await fetch(url);
+      const text = await response.text();
+      res.json({ content: text });
+    } catch (error) {
+      console.error("Fetch API Error:", error);
+      res.status(500).json({ error: "Fetch failed" });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

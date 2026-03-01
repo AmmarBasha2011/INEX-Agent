@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { X, Folder, FileText, Trash2, Edit2, Download, Plus, ChevronRight, ArrowLeft, Image as ImageIcon, Music, Video, Code, File as FileIcon, UploadCloud } from 'lucide-react';
+import { X, Folder, FileText, Trash2, Edit2, Download, Plus, ChevronRight, ArrowLeft, Image as ImageIcon, Music, Video, Code, File as FileIcon, UploadCloud, Copy, Move } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 type FileNode = {
@@ -200,6 +200,30 @@ export default function FileManagerModal({ files, onAddFile, onUpdateFile, onDel
     onDeleteFile(id);
   };
 
+  const handleCopy = (file: FileNode, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newName = prompt("Enter name for the copy:", `Copy of ${file.name}`);
+    if (!newName) return;
+    const newNode: FileNode = {
+      ...file,
+      id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: newName,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    onAddFile(newNode);
+  };
+
+  const handleMove = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const destFolderId = prompt("Enter destination folder ID (leave empty for root):");
+    if (destFolderId === null) return;
+    const file = files.find(f => f.id === id);
+    if (file) {
+      onUpdateFile({ ...file, parentId: destFolderId || null, updatedAt: Date.now() });
+    }
+  };
+
   const handleRename = (id: string, name: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setRenamingNode(id);
@@ -393,10 +417,18 @@ export default function FileManagerModal({ files, onAddFile, onUpdateFile, onDel
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         {!file.isFolder && (
-                          <button onClick={(e) => handleDownload(file, e)} className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors" title="Download">
-                            <Download className="w-3.5 h-3.5" />
-                          </button>
+                          <>
+                            <button onClick={(e) => handleCopy(file, e)} className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors" title="Copy">
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={(e) => handleDownload(file, e)} className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors" title="Download">
+                              <Download className="w-3.5 h-3.5" />
+                            </button>
+                          </>
                         )}
+                        <button onClick={(e) => handleMove(file.id, e)} className="p-1.5 text-zinc-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors" title="Move">
+                          <Move className="w-3.5 h-3.5" />
+                        </button>
                         <button onClick={(e) => handleDelete(file.id, e)} className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors" title="Delete">
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>

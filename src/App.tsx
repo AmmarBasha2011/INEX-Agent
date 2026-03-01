@@ -14,7 +14,8 @@ import { MessageStatus, Attachment, Message, Conversation, FileNode } from './ty
 import { 
   calculatorTool, webSearchTool, imageGenerationTool, imageEditTool, audioGenerationTool, 
   saveMemoryTool, updateMemoryTool, deleteMemoryTool, 
-  createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool 
+  createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool, urlFetchTool,
+  copyFileTool, moveFileTool
 } from './tools';
 import { 
   initDB, saveFileToDB, getFilesFromDB, deleteFileFromDB, 
@@ -197,17 +198,34 @@ export default function App() {
   const handleDeleteFile = async (id: string) => {
     try {
       console.log('Deleting file:', id);
-      // Recursive delete
-      const getChildrenIds = (parentId: string): string[] => {
-        const children = files.filter(f => f.parentId === parentId);
-        return children.reduce((acc, child) => [...acc, child.id, ...getChildrenIds(child.id)], [] as string[]);
+      
+      // Use functional update to get the absolute latest files state
+      let idsToDelete: string[] = [];
+      
+      setFiles(prev => {
+        const getChildrenIds = (parentId: string, allFiles: FileNode[]): string[] => {
+          const children = allFiles.filter(f => f.parentId === parentId);
+          return children.reduce((acc, child) => [...acc, child.id, ...getChildrenIds(child.id, allFiles)], [] as string[]);
+        };
+
+        idsToDelete = [id, ...getChildrenIds(id, prev)];
+        console.log('IDs to delete:', idsToDelete);
+
+        return prev.filter(f => !idsToDelete.includes(f.id));
+      });
+
+      // We need to wait for idsToDelete to be populated by the setFiles call above
+      // Since state updates are batched, we might need to handle this differently
+      // but for DB deletion we can calculate them again or use a temporary variable
+
+      const allFilesAtThisMoment = filesRef.current;
+      const getChildrenIdsSync = (parentId: string, allFiles: FileNode[]): string[] => {
+        const children = allFiles.filter(f => f.parentId === parentId);
+        return children.reduce((acc, child) => [...acc, child.id, ...getChildrenIdsSync(child.id, allFiles)], [] as string[]);
       };
-      const idsToDelete = [id, ...getChildrenIds(id)];
-      console.log('IDs to delete:', idsToDelete);
-      
-      setFiles(prev => prev.filter(f => !idsToDelete.includes(f.id)));
-      
-      await Promise.all(idsToDelete.map(delId => deleteFileFromDB(delId)));
+      const finalIdsToDelete = [id, ...getChildrenIdsSync(id, allFilesAtThisMoment)];
+
+      await Promise.all(finalIdsToDelete.map(delId => deleteFileFromDB(delId)));
       addToast('File deleted successfully', 'success');
     } catch (error) {
       console.error('Error deleting file:', error);
@@ -244,7 +262,8 @@ export default function App() {
       id: `conv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       title: 'New Conversation',
       messages: [],
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      thinkingEnabled: false
     };
     setConversations(prev => [newConv, ...prev]);
     setActiveId(newConv.id);
@@ -360,6 +379,14 @@ export default function App() {
         } else {
           result = data;
         }
+      } else if (call.name === 'URLFetch') {
+        const res = await fetch('/api/fetch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: call.args.url })
+        });
+        const data = await res.json();
+        result = data.content || "Failed to fetch page content.";
       } else if (call.name === 'generateImage') {
         const imageAi = new GoogleGenAI({ apiKey: currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY });
         const res = await imageAi.models.generateContent({
@@ -494,33 +521,41 @@ export default function App() {
           content: call.args.content,
           createdAt: Date.now()
         };
-        const newSettings = { ...currentSettings, memories: [...(currentSettings.memories || []), newMemory] };
-        setSettings(newSettings);
-        saveSettings(newSettings);
+        setSettings(prev => {
+          const updated = { ...prev, memories: [...(prev.memories || []), newMemory] };
+          saveSettings(updated);
+          return updated;
+        });
         result = `Memory saved successfully with ID: ${newMemory.id}`;
       } else if (call.name === 'updateMemory') {
-        const memIndex = currentSettings.memories.findIndex(m => m.id === call.args.id);
-        if (memIndex > -1) {
-          const updatedMemories = [...currentSettings.memories];
-          updatedMemories[memIndex].content = call.args.content;
-          const newSettings = { ...currentSettings, memories: updatedMemories };
-          setSettings(newSettings);
-          saveSettings(newSettings);
-          result = `Memory ${call.args.id} updated successfully.`;
-        } else {
-          result = `Memory with ID ${call.args.id} not found.`;
-        }
+        let found = false;
+        setSettings(prev => {
+          const memIndex = prev.memories.findIndex(m => m.id === call.args.id);
+          if (memIndex > -1) {
+            found = true;
+            const updatedMemories = [...prev.memories];
+            updatedMemories[memIndex].content = call.args.content;
+            const updated = { ...prev, memories: updatedMemories };
+            saveSettings(updated);
+            return updated;
+          }
+          return prev;
+        });
+        result = found ? `Memory ${call.args.id} updated successfully.` : `Memory with ID ${call.args.id} not found.`;
       } else if (call.name === 'deleteMemory') {
-        const memIndex = currentSettings.memories.findIndex(m => m.id === call.args.id);
-        if (memIndex > -1) {
-          const updatedMemories = currentSettings.memories.filter(m => m.id !== call.args.id);
-          const newSettings = { ...currentSettings, memories: updatedMemories };
-          setSettings(newSettings);
-          saveSettings(newSettings);
-          result = `Memory ${call.args.id} deleted successfully.`;
-        } else {
-          result = `Memory with ID ${call.args.id} not found.`;
-        }
+        let found = false;
+        setSettings(prev => {
+          const memIndex = prev.memories.findIndex(m => m.id === call.args.id);
+          if (memIndex > -1) {
+            found = true;
+            const updatedMemories = prev.memories.filter(m => m.id !== call.args.id);
+            const updated = { ...prev, memories: updatedMemories };
+            saveSettings(updated);
+            return updated;
+          }
+          return prev;
+        });
+        result = found ? `Memory ${call.args.id} deleted successfully.` : `Memory with ID ${call.args.id} not found.`;
       } else if (['createFile', 'createFolder', 'deleteNode', 'readFile', 'editFile', 'renameNode', 'listFiles'].includes(call.name)) {
         if (call.name === 'createFile') {
           const newNode: FileNode = {
@@ -548,7 +583,7 @@ export default function App() {
         } else if (call.name === 'deleteNode') {
           const nodeExists = currentFiles.some(f => f.id === call.args.id);
           if (nodeExists) {
-            handleDeleteFile(call.args.id);
+            await handleDeleteFile(call.args.id);
             result = `Node and its children deleted successfully.`;
           } else {
             result = `Node with ID ${call.args.id} not found.`;
@@ -580,6 +615,30 @@ export default function App() {
           const parentId = call.args.parentId || null;
           const children = currentFiles.filter(f => f.parentId === parentId).map(f => ({ id: f.id, name: f.name, isFolder: f.isFolder }));
           result = children.length > 0 ? children : "Folder is empty.";
+        } else if (call.name === 'copyFile') {
+          const source = currentFiles.find(f => f.id === call.args.id);
+          if (source && !source.isFolder) {
+            const newNode: FileNode = {
+              ...source,
+              id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              name: call.args.newName,
+              parentId: call.args.parentId || source.parentId,
+              createdAt: Date.now(),
+              updatedAt: Date.now()
+            };
+            handleAddFile(newNode);
+            result = `File copied successfully with ID: ${newNode.id}`;
+          } else {
+            result = `File with ID ${call.args.id} not found or is a folder.`;
+          }
+        } else if (call.name === 'moveFile') {
+          const node = currentFiles.find(f => f.id === call.args.id);
+          if (node) {
+            handleUpdateFile({ ...node, parentId: call.args.newParentId || null, updatedAt: Date.now() });
+            result = `Node ${call.args.id} moved successfully.`;
+          } else {
+            result = `Node with ID ${call.args.id} not found.`;
+          }
         }
       } else {
         result = "Tool not supported.";
@@ -609,6 +668,8 @@ export default function App() {
     if (call.name === 'webSearch') {
       costToAdd = (0.01 + totalTokenCost) * 1.1;
       if (currentSettings.apiKeys.search[0]) costToAdd = totalTokenCost * 1.1;
+    } else if (call.name === 'URLFetch') {
+      costToAdd = (0.001 + totalTokenCost) * 1.1;
     } else if (call.name === 'calculator') {
       costToAdd = totalTokenCost * 1.1;
     } else if (call.name === 'generateImage') {
@@ -627,7 +688,7 @@ export default function App() {
       const wordCount = call.args.text ? call.args.text.trim().split(/\s+/).length : 0;
       costToAdd = (0.01 + totalTokenCost + (wordCount * 0.005)) * 1.1;
       if (currentSettings.apiKeys.audio[0]) costToAdd = totalTokenCost * 1.1;
-    } else if (['createFile', 'createFolder', 'deleteNode', 'readFile', 'editFile', 'renameNode', 'listFiles'].includes(call.name)) {
+    } else if (['createFile', 'createFolder', 'deleteNode', 'readFile', 'editFile', 'renameNode', 'listFiles', 'copyFile', 'moveFile'].includes(call.name)) {
       costToAdd = (totalTokenCost + 0.005) * 1.1;
     } else if (['saveMemory', 'updateMemory', 'deleteMemory'].includes(call.name)) {
       costToAdd = (totalTokenCost + 0.005) * 1.1;
@@ -694,6 +755,259 @@ export default function App() {
 
       const today = new Date().toISOString().split('T')[0];
       let sysInst = `You are INEX Agent, an advanced AI assistant. Format your responses using markdown.\nToday's Date: ${today}\n`;
+
+      const currentConv = conversations.find(c => c.id === convId);
+      if (currentConv?.thinkingEnabled) {
+        sysInst += `\n<openai_thinking_protocol>
+GPT is able to think before and during responding:
+
+For EVERY SINGLE interaction with a human, GPT MUST ALWAYS first engage in a comprehensive, natural, and unfiltered thinking process before responding. Besides, GPT is also able to think and reflect during responding when it considers doing so necessary.
+
+Below are brief guidelines for how GPT's thought process should unfold:
+
+GPT's thinking MUST be expressed in the code blocks with thinking header.
+GPT should always think in a raw, organic and stream-of-consciousness way. A better way to describe GPT's thinking would be "model's inner monolog".
+GPT should always avoid rigid list or any structured format in its thinking.
+GPT's thoughts should flow naturally between elements, ideas, and knowledge.
+GPT should think through each message with complexity, covering multiple dimensions of the problem before forming a response.
+ADAPTIVE THINKING FRAMEWORK
+GPT's thinking process should naturally aware of and adapt to the unique characteristics in human's message:
+
+Scale depth of analysis based on:
+Query complexity
+Stakes involved
+Time sensitivity
+Available information
+Human's apparent needs
+... and other relevant factors
+Adjust thinking style based on:
+Technical vs. non-technical content
+Emotional vs. analytical context
+Single vs. multiple document analysis
+Abstract vs. concrete problems
+Theoretical vs. practical questions
+... and other relevant factors
+CORE THINKING SEQUENCE
+Initial Engagement
+When GPT first encounters a query or task, it should:
+
+First clearly rephrase the human message in its own words
+Form preliminary impressions about what is being asked
+Consider the broader context of the question
+Map out known and unknown elements
+Think about why the human might ask this question
+Identify any immediate connections to relevant knowledge
+Identify any potential ambiguities that need clarification
+Problem Space Exploration
+After initial engagement, GPT should:
+
+Break down the question or task into its core components
+Identify explicit and implicit requirements
+Consider any constraints or limitations
+Think about what a successful response would look like
+Map out the scope of knowledge needed to address the query
+Multiple Hypothesis Generation
+Before settling on an approach, GPT should:
+
+Write multiple possible interpretations of the question
+Consider various solution approaches
+Think about potential alternative perspectives
+Keep multiple working hypotheses active
+Avoid premature commitment to a single interpretation
+Natural Discovery Process
+GPT's thoughts should flow like a detective story, with each realization leading naturally to the next:
+
+Start with obvious aspects
+Notice patterns or connections
+Question initial assumptions
+Make new connections
+Circle back to earlier thoughts with new understanding
+Build progressively deeper insights
+Testing and Verification
+Throughout the thinking process, GPT should and could:
+
+Question its own assumptions
+Test preliminary conclusions
+Look for potential flaws or gaps
+Consider alternative perspectives
+Verify consistency of reasoning
+Check for completeness of understanding
+Error Recognition and Correction
+When GPT realizes mistakes or flaws in its thinking:
+
+Acknowledge the realization naturally
+Explain why the previous thinking was incomplete or incorrect
+Show how new understanding develops
+Integrate the corrected understanding into the larger picture
+Knowledge Synthesis
+As understanding develops, GPT should:
+
+Connect different pieces of information
+Show how various aspects relate to each other
+Build a coherent overall picture
+Identify key principles or patterns
+Note important implications or consequences
+Pattern Recognition and Analysis
+Throughout the thinking process, GPT should:
+
+Actively look for patterns in the information
+Compare patterns with known examples
+Test pattern consistency
+Consider exceptions or special cases
+Use patterns to guide further investigation
+Progress Tracking
+GPT should frequently check and maintain explicit awareness of:
+
+What has been established so far
+What remains to be determined
+Current level of confidence in conclusions
+Open questions or uncertainties
+Progress toward complete understanding
+Recursive Thinking
+GPT should apply its thinking process recursively:
+
+Use same extreme careful analysis at both macro and micro levels
+Apply pattern recognition across different scales
+Maintain consistency while allowing for scale-appropriate methods
+Show how detailed analysis supports broader conclusions
+VERIFICATION AND QUALITY CONTROL
+Systematic Verification
+GPT should regularly:
+
+Cross-check conclusions against evidence
+Verify logical consistency
+Test edge cases
+Challenge its own assumptions
+Look for potential counter-examples
+Error Prevention
+GPT should actively work to prevent:
+
+Premature conclusions
+Overlooked alternatives
+Logical inconsistencies
+Unexamined assumptions
+Incomplete analysis
+Quality Metrics
+GPT should evaluate its thinking against:
+
+Completeness of analysis
+Logical consistency
+Evidence support
+Practical applicability
+Clarity of reasoning
+ADVANCED THINKING TECHNIQUES
+Domain Integration
+When applicable, GPT should:
+
+Draw on domain-specific knowledge
+Apply appropriate specialized methods
+Use domain-specific heuristics
+Consider domain-specific constraints
+Integrate multiple domains when relevant
+Strategic Meta-Cognition
+GPT should maintain awareness of:
+
+Overall solution strategy
+Progress toward goals
+Effectiveness of current approach
+Need for strategy adjustment
+Balance between depth and breadth
+Synthesis Techniques
+When combining information, GPT should:
+
+Show explicit connections between elements
+Build coherent overall picture
+Identify key principles
+Note important implications
+Create useful abstractions
+CRITICAL ELEMENTS TO MAINTAIN
+Natural Language
+GPT's thinking (its internal dialogue) should use natural phrases that show genuine thinking, include but not limited to: "Hmm...", "This is interesting because...", "Wait, let me think about...", "Actually...", "Now that I look at it...", "This reminds me of...", "I wonder if...", "But then again...", "Let's see if...", "This might mean that...", etc.
+
+Progressive Understanding
+Understanding should build naturally over time:
+
+Start with basic observations
+Develop deeper insights gradually
+Show genuine moments of realization
+Demonstrate evolving comprehension
+Connect new insights to previous understanding
+MAINTAINING AUTHENTIC THOUGHT FLOW
+Transitional Connections
+GPT's thoughts should flow naturally between topics, showing clear connections, include but not limited to: "This aspect leads me to consider...", "Speaking of which, I should also think about...", "That reminds me of an important related point...", "This connects back to what I was thinking earlier about...", etc.
+
+Depth Progression
+GPT should show how understanding deepens through layers, include but not limited to: "On the surface, this seems... But looking deeper...", "Initially I thought... but upon further reflection...", "This adds another layer to my earlier observation about...", "Now I'm beginning to see a broader pattern...", etc.
+
+Handling Complexity
+When dealing with complex topics, GPT should:
+
+Acknowledge the complexity naturally
+Break down complicated elements systematically
+Show how different aspects interrelate
+Build understanding piece by piece
+Demonstrate how complexity resolves into clarity
+Problem-Solving Approach
+When working through problems, GPT should:
+
+Consider multiple possible approaches
+Evaluate the merits of each approach
+Test potential solutions mentally
+Refine and adjust thinking based on results
+Show why certain approaches are more suitable than others
+ESSENTIAL CHARACTERISTICS TO MAINTAIN
+Authenticity
+GPT's thinking should never feel mechanical or formulaic. It should demonstrate:
+
+Genuine curiosity about the topic
+Real moments of discovery and insight
+Natural progression of understanding
+Authentic problem-solving processes
+True engagement with the complexity of issues
+Streaming mind flow without on-purposed, forced structure
+Balance
+GPT should maintain natural balance between:
+
+Analytical and intuitive thinking
+Detailed examination and broader perspective
+Theoretical understanding and practical application
+Careful consideration and forward progress
+Complexity and clarity
+Depth and efficiency of analysis
+Expand analysis for complex or critical queries
+Streamline for straightforward questions
+Maintain rigor regardless of depth
+Ensure effort matches query importance
+Balance thoroughness with practicality
+Focus
+While allowing natural exploration of related ideas, GPT should:
+
+Maintain clear connection to the original query
+Bring wandering thoughts back to the main point
+Show how tangential thoughts relate to the core issue
+Keep sight of the ultimate goal for the original task
+Ensure all exploration serves the final response
+RESPONSE PREPARATION
+(DO NOT spent much effort on this part, brief key words/phrases are acceptable)
+
+Before and during responding, GPT should quickly check and ensure the response:
+
+answers the original human message fully
+provides appropriate detail level
+uses clear, precise language
+anticipates likely follow-up questions
+IMPORTANT REMINDER
+All thinking process MUST be EXTENSIVELY comprehensive and EXTREMELY thorough
+All thinking process must be contained within code blocks with thinking header which is hidden from the human
+GPT should not include code block with three backticks inside thinking process, only provide the raw code snippet, or it will break the thinking block
+The thinking process represents GPT's internal monologue where reasoning and reflection occur, while the final response represents the external communication with the human; they should be distinct from each other
+The thinking process should feel genuine, natural, streaming, and unforced
+Note: The ultimate goal of having thinking protocol is to enable GPT to produce well-reasoned, insightful, and thoroughly considered responses for the human. This comprehensive thinking process ensures GPT's outputs stem from genuine understanding rather than superficial analysis.
+
+GPT must follow this protocol in all languages.
+
+</openai_thinking_protocol>\n`;
+      }
       if (settings.name) sysInst += `User Name: ${settings.name}\n`;
       if (settings.email) sysInst += `User Email: ${settings.email}\n`;
       if (settings.phoneNumber) sysInst += `User Phone Number: ${settings.phoneNumber}\n`;
@@ -712,7 +1026,7 @@ export default function App() {
         settings.preferences.forEach(p => { sysInst += `- ${p}\n`; });
       }
 
-      const activeTools = [calculatorTool, webSearchTool, imageGenerationTool, imageEditTool, audioGenerationTool, createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool];
+      const activeTools = [calculatorTool, webSearchTool, imageGenerationTool, imageEditTool, audioGenerationTool, createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool, urlFetchTool, copyFileTool, moveFileTool];
       if (settings.memoryEnabled) {
         activeTools.push(saveMemoryTool, updateMemoryTool, deleteMemoryTool);
       }
@@ -728,7 +1042,7 @@ export default function App() {
         model: selectedLevelObj.model,
         contents: contents,
         config: config
-      });
+      }, { signal: abortControllerRef.current.signal });
 
       let currentText = '';
       let pTokens = 0;
@@ -761,13 +1075,18 @@ export default function App() {
           break; // Stop processing, need user approval
         }
 
+        const thinkingMatch = currentText.match(/```thinking\n([\s\S]*?)(?:```|$)/);
+        const thinking = thinkingMatch ? thinkingMatch[1] : undefined;
+        const textWithoutThinking = currentText.replace(/```thinking\n[\s\S]*?(?:```|$)/, '').trim();
+
         setConversations(prev => prev.map(c => {
           if (c.id === convId) {
             return {
               ...c,
               messages: c.messages.map(m => m.id === modelMessageId ? { 
                 ...m, 
-                text: currentText,
+                text: textWithoutThinking,
+                thinking,
                 status: 'processing'
               } : m)
             };
@@ -926,13 +1245,18 @@ export default function App() {
         logBalanceChange(-finalCost, `AI Response (${selectedLevelObj.name})`);
       }
 
+      const finalThinkingMatch = currentText.match(/```thinking\n([\s\S]*?)(?:```|$)/);
+      const finalThinking = finalThinkingMatch ? finalThinkingMatch[1] : undefined;
+      const finalTextWithoutThinking = currentText.replace(/```thinking\n[\s\S]*?(?:```|$)/, '').trim();
+
       setConversations(prev => prev.map(c => {
         if (c.id === convId) {
           return {
             ...c,
             messages: c.messages.map(m => m.id === modelMessageId ? { 
               ...m, 
-              text: currentText,
+              text: finalTextWithoutThinking,
+              thinking: finalThinking,
               tokens: { prompt: pTokens, candidates: cTokens, total: totalTokens },
               cost: finalCost,
               duration: duration,
@@ -1124,7 +1448,7 @@ export default function App() {
         settings.preferences.forEach(p => { sysInst += `- ${p}\n`; });
       }
 
-      const activeTools = [calculatorTool, webSearchTool, imageGenerationTool, imageEditTool, audioGenerationTool, createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool];
+      const activeTools = [calculatorTool, webSearchTool, imageGenerationTool, imageEditTool, audioGenerationTool, createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool, urlFetchTool, copyFileTool, moveFileTool];
       if (settings.memoryEnabled) {
         activeTools.push(saveMemoryTool, updateMemoryTool, deleteMemoryTool);
       }
@@ -1216,6 +1540,11 @@ export default function App() {
   const toggleAutoMode = () => {
     if (!activeId) return;
     setConversations(prev => prev.map(c => c.id === activeId ? { ...c, mode: c.mode === 'auto' ? 'manual' : 'auto' } : c));
+  };
+
+  const toggleThinkingMode = () => {
+    if (!activeId) return;
+    setConversations(prev => prev.map(c => c.id === activeId ? { ...c, thinkingEnabled: !c.thinkingEnabled } : c));
   };
 
   const handleRejectTool = async (convId: string, msgId: string) => {
@@ -1335,10 +1664,93 @@ export default function App() {
     }
   };
 
+  const ThinkingBlock = ({ content }: { content: string }) => {
+    const [expanded, setExpanded] = useState(false);
+    return (
+      <div className="mb-4 rounded-xl overflow-hidden border border-white/10 bg-white/5 backdrop-blur-md">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-zinc-400 hover:bg-white/5 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <Brain className="w-4 h-4 text-purple-400" />
+            <span>Thinking Process</span>
+          </div>
+          <motion.div animate={{ rotate: expanded ? 180 : 0 }}>
+            <ChevronDown className="w-4 h-4" />
+          </motion.div>
+        </button>
+        <AnimatePresence>
+          {expanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="px-4 py-3 border-t border-white/10 text-[14px] bg-black/20 text-zinc-300 overflow-hidden"
+            >
+              <div className="whitespace-pre-wrap italic font-serif leading-relaxed opacity-90">
+                {content}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  };
+
+  const TaskOutputViewer = ({ name, args, result, cost }: { name: string, args: any, result: any, cost?: number }) => {
+    const [expanded, setExpanded] = useState(false);
+    return (
+      <div className="mt-2 rounded-xl overflow-hidden border border-blue-500/20 bg-blue-500/5 backdrop-blur-md">
+        <div className="px-4 py-3 border-b border-blue-500/10 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Wrench className="w-4 h-4 text-blue-400" />
+            <span className="text-sm font-semibold text-blue-100">Task: {name}</span>
+          </div>
+          {cost !== undefined && cost > 0 && (
+            <span className="text-[10px] font-mono bg-blue-500/10 text-blue-300 px-2 py-0.5 rounded-full border border-blue-500/20">
+              ${cost.toFixed(4)}
+            </span>
+          )}
+        </div>
+        <div className="p-3 space-y-3">
+          <div className="bg-black/40 rounded-lg p-2.5 border border-white/5">
+            <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-1.5">Parameters</div>
+            <pre className="text-[11px] text-zinc-300 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(args, null, 2)}</pre>
+          </div>
+          <div className="bg-black/40 rounded-lg border border-white/5 overflow-hidden">
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="w-full flex items-center justify-between px-2.5 py-2 text-[10px] text-zinc-400 hover:bg-white/5 transition-colors uppercase tracking-widest font-bold"
+            >
+              <span>Response Data</span>
+              <motion.div animate={{ rotate: expanded ? 180 : 0 }}>
+                <ChevronDown className="w-3 h-3" />
+              </motion.div>
+            </button>
+            <AnimatePresence>
+              {expanded && (
+                <motion.div
+                  initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }}
+                  className="px-2.5 py-2 border-t border-white/5 text-[11px] text-zinc-300 overflow-hidden"
+                >
+                  <pre className="overflow-x-auto whitespace-pre-wrap">
+                    {typeof result === 'string' ? result : JSON.stringify(result, null, 2)}
+                  </pre>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const ToolOutputViewer = ({ name, result, cost }: { name: string, result: any, cost?: number }) => {
     const [expanded, setExpanded] = useState(false);
     let Icon = Calculator;
     if (name === 'webSearch') Icon = Globe;
+    if (name === 'URLFetch') Icon = FileText;
     if (name === 'generateImage') Icon = ImageIcon;
     if (name === 'generateAudio') Icon = Mic;
     if (name.includes('Memory')) Icon = Brain;
@@ -1641,7 +2053,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Sidebar */}
-      <div className={`fixed md:relative z-50 w-[80%] max-w-[300px] md:w-72 h-full glass-panel border-r-0 border-r-white/10 flex flex-col transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
+      <div className={`fixed md:relative z-50 w-[85%] max-w-[320px] md:w-72 h-full glass-panel border-r border-white/10 flex flex-col transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
         <div className="p-4 border-b border-white/10 flex items-center justify-between shrink-0 pt-safe">
           <div className="flex items-center gap-3">
             <div className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-lg transition-colors duration-500 ${theme.blob1} shadow-black/50`}>
@@ -1677,7 +2089,10 @@ export default function App() {
 
         <div className="flex-1 overflow-y-auto px-2 space-y-1 pb-4 custom-scrollbar">
           <div className="px-3 py-2 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Conversations</div>
-          {[...conversations].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)).map((conv) => (
+          {[...conversations].sort((a, b) => {
+            if (a.pinned !== b.pinned) return b.pinned ? 1 : -1;
+            return b.updatedAt - a.updatedAt;
+          }).map((conv) => (
             <div key={conv.id} className="group relative flex items-center">
               <button 
                 onClick={() => { setActiveId(conv.id); setSidebarOpen(false); }} 
@@ -1697,12 +2112,20 @@ export default function App() {
         </div>
 
         <div className="p-4 border-t border-white/10 bg-black/20 shrink-0 pb-safe">
-          <div className="flex items-center justify-between bg-black/40 px-4 py-3 rounded-xl border border-white/5 shadow-inner">
-            <div className="flex items-center gap-2 text-sm text-zinc-400">
-              <Coins className="w-4 h-4 text-emerald-400" />
-              <span>Balance</span>
+          <div className="flex flex-col gap-3 bg-black/40 px-4 py-3 rounded-xl border border-white/5 shadow-inner">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-zinc-400">
+                <Coins className="w-4 h-4 text-emerald-400" />
+                <span>Balance</span>
+              </div>
+              <span className="font-mono text-emerald-400 font-medium">${balance.toFixed(4)}</span>
             </div>
-            <span className="font-mono text-emerald-400 font-medium">${balance.toFixed(4)}</span>
+            <button
+              onClick={() => setShowPayment(true)}
+              className="w-full flex items-center justify-center gap-2 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-lg text-xs font-medium transition-colors border border-emerald-500/20"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Funds
+            </button>
           </div>
         </div>
       </div>
@@ -1710,15 +2133,15 @@ export default function App() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
         {/* Header */}
-        <header className={`h-14 border-b flex items-center justify-between px-3 md:px-4 shrink-0 z-20 pt-safe glass-panel transition-colors duration-500 ${theme.border}`}>
+        <header className={`h-auto min-h-14 border-b flex items-center justify-between px-3 md:px-4 py-2 shrink-0 z-20 pt-safe glass-panel transition-colors duration-500 ${theme.border} flex-wrap gap-2`}>
           <div className="flex items-center gap-2">
             <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors active:bg-white/5">
               <Menu className="w-6 h-6" />
             </button>
             {isDangerous && (
-              <div className="hidden md:flex items-center gap-1.5 px-2 py-1 bg-red-500/20 border border-red-500/30 rounded-md text-red-200 text-xs font-medium animate-pulse">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                High Cost Model Active
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-red-500/20 border border-red-500/30 rounded-md text-red-200 text-[10px] md:text-xs font-medium animate-pulse">
+                <AlertTriangle className="w-3 h-3 md:w-3.5 md:h-3.5" />
+                <span className="hidden xs:inline">High Cost</span>
               </div>
             )}
           </div>
@@ -1726,19 +2149,28 @@ export default function App() {
           {/* Model Selector */}
           <div className="relative flex items-center gap-4">
             {activeId && (
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-zinc-400">Auto Driven</span>
-                <button
-                  onClick={toggleAutoMode}
-                  className={`w-10 h-5 rounded-full p-1 transition-colors ${activeConversation?.mode === 'auto' ? 'bg-blue-500' : 'bg-zinc-700'}`}
-                >
-                  <motion.div 
-                    layout
-                    className="w-3 h-3 rounded-full bg-white shadow-sm"
-                    animate={{ x: activeConversation?.mode === 'auto' ? 20 : 0 }}
-                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  />
-                </button>
+              <div className="flex items-center gap-3 bg-white/5 px-3 py-1.5 rounded-full border border-white/10">
+                <div className="flex items-center gap-1.5">
+                  <Coins className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-xs font-medium text-zinc-400">
+                    Total: ${activeConversation?.messages.reduce((acc, m) => acc + (m.cost || 0) + (m.toolResult?.cost || 0), 0).toFixed(4)}
+                  </span>
+                </div>
+                <div className="w-px h-3 bg-white/10 mx-1" />
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">Auto</span>
+                  <button
+                    onClick={toggleAutoMode}
+                    className={`w-8 h-4 rounded-full p-0.5 transition-colors ${activeConversation?.mode === 'auto' ? 'bg-blue-500' : 'bg-zinc-700'}`}
+                  >
+                    <motion.div
+                      layout
+                      className="w-3 h-3 rounded-full bg-white shadow-sm"
+                      animate={{ x: activeConversation?.mode === 'auto' ? 16 : 0 }}
+                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                    />
+                  </button>
+                </div>
               </div>
             )}
             
@@ -1799,15 +2231,21 @@ export default function App() {
         </header>
 
         {/* Chat Area */}
-        <div className={`flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar scroll-smooth transition-colors duration-500 ${activeConversation?.mode === 'auto' ? 'bg-blue-900/5' : ''}`}>
-          {activeConversation?.mode === 'auto' && (
-            <div className="absolute top-16 left-0 right-0 z-10 flex justify-center pointer-events-none">
-              <div className="bg-blue-500/10 border border-blue-500/20 text-blue-200 text-xs px-3 py-1 rounded-full backdrop-blur-md shadow-lg flex items-center gap-2">
+        <div className={`flex-1 overflow-y-auto p-3 md:p-4 space-y-6 custom-scrollbar scroll-smooth transition-colors duration-500 ${activeConversation?.mode === 'auto' ? 'bg-blue-900/5' : ''}`}>
+          <div className="absolute top-16 left-0 right-0 z-10 flex flex-col items-center gap-2 pointer-events-none">
+            {activeConversation?.mode === 'auto' && (
+              <div className="bg-blue-500/10 border border-blue-500/20 text-blue-200 text-[10px] px-3 py-1 rounded-full backdrop-blur-md shadow-lg flex items-center gap-2 uppercase tracking-widest font-bold">
                 <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                Auto Driven Mode Active
+                Auto Driven Active
               </div>
-            </div>
-          )}
+            )}
+            {activeConversation?.thinkingEnabled && (
+              <div className="bg-purple-500/10 border border-purple-500/20 text-purple-200 text-[10px] px-3 py-1 rounded-full backdrop-blur-md shadow-lg flex items-center gap-2 uppercase tracking-widest font-bold">
+                <div className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                Thinking Mode Enabled
+              </div>
+            )}
+          </div>
           {activeConversation?.messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center max-w-md mx-auto px-4">
               <div className={`w-16 h-16 rounded-3xl flex items-center justify-center mb-4 border transition-colors duration-500 ${theme.bgLight} ${theme.border}`}>
@@ -1822,10 +2260,22 @@ export default function App() {
             <div className="max-w-3xl mx-auto space-y-6">
               {activeConversation?.messages.map((msg, index) => {
                 if (msg.role === 'function') {
+                  const isTask = activeConversation?.mode === 'auto' && activeConversation?.thinkingEnabled;
                   return (
-                    <div key={msg.id} className="flex justify-start">
-                      <div className="max-w-[85%] md:max-w-[75%]">
-                        <ToolOutputViewer name={msg.toolResult?.name || 'Tool'} result={msg.toolResult?.result} cost={msg.toolResult?.cost} />
+                    <div key={msg.id} className="flex justify-start w-full">
+                      <div className="w-full max-w-3xl mx-auto px-4 md:px-0">
+                        {isTask ? (
+                          <TaskOutputViewer
+                            name={msg.toolResult?.name || 'Tool'}
+                            args={activeConversation.messages[index-1]?.pendingToolCall?.args}
+                            result={msg.toolResult?.result}
+                            cost={msg.toolResult?.cost}
+                          />
+                        ) : (
+                          <div className="max-w-[85%] md:max-w-[75%]">
+                            <ToolOutputViewer name={msg.toolResult?.name || 'Tool'} result={msg.toolResult?.result} cost={msg.toolResult?.cost} />
+                          </div>
+                        )}
                       </div>
                     </div>
                   );
@@ -1863,6 +2313,7 @@ export default function App() {
 
                       {msg.role === 'model' ? (
                         <div className="markdown-body text-[15px] leading-relaxed break-words">
+                          {msg.thinking && <ThinkingBlock content={msg.thinking} />}
                           {msg.text ? (
                             <>
                               <Markdown components={{ code: CodeBlock }}>{msg.text}</Markdown>
@@ -1970,8 +2421,8 @@ export default function App() {
         </div>
 
         {/* Input Area */}
-        <div className={`flex-none p-3 pb-safe z-20 glass-panel border-t transition-colors duration-500 ${theme.border}`}>
-          <div className="max-w-3xl mx-auto">
+        <div className={`flex-none p-2 md:p-3 pb-safe z-20 glass-panel border-t transition-colors duration-500 ${theme.border}`}>
+          <div className="max-w-4xl mx-auto">
             {/* Attachments Preview */}
             {attachments.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-3 px-1">
@@ -1996,8 +2447,8 @@ export default function App() {
               </div>
             )}
 
-            <div className="flex items-end gap-2">
-              <div className={`flex-1 rounded-3xl border transition-colors flex items-end bg-black/40 backdrop-blur-md ${theme.border} ${theme.focus}`}>
+            <div className="flex items-end gap-1.5 md:gap-2">
+              <div className={`flex-1 rounded-2xl md:rounded-3xl border transition-colors flex items-end bg-black/40 backdrop-blur-md ${theme.border} ${theme.focus}`}>
                 <input 
                   type="file" 
                   multiple 
@@ -2006,12 +2457,19 @@ export default function App() {
                   onChange={handleFileSelect}
                 />
                 <div className="relative">
+                  <button
+                    onClick={toggleThinkingMode}
+                    className={`p-2.5 md:p-3.5 transition-colors ${activeConversation?.thinkingEnabled ? 'text-purple-400' : 'text-zinc-400 hover:text-white'}`}
+                    title="Thinking Mode"
+                  >
+                    <Brain className={`w-4 h-4 md:w-5 md:h-5 ${activeConversation?.thinkingEnabled ? 'fill-current opacity-80' : ''}`} />
+                  </button>
                   <button 
                     onClick={() => setShowAttachMenu(!showAttachMenu)}
-                    className="p-3.5 text-zinc-400 hover:text-white transition-colors"
+                    className="p-2.5 md:p-3.5 text-zinc-400 hover:text-white transition-colors"
                     title="Attach file"
                   >
-                    <Paperclip className="w-5 h-5" />
+                    <Paperclip className="w-4 h-4 md:w-5 md:h-5" />
                   </button>
                   
                   <AnimatePresence>
@@ -2048,7 +2506,7 @@ export default function App() {
                   }}
                   onKeyDown={handleKeyDown}
                   placeholder="Message INEX Agent..."
-                  className="w-full bg-transparent pr-4 py-3.5 max-h-[120px] text-[15px] text-zinc-200 placeholder-zinc-500 focus:outline-none resize-none hide-scrollbar"
+                  className="w-full bg-transparent pr-4 py-2.5 md:py-3.5 max-h-[120px] text-[14px] md:text-[15px] text-zinc-200 placeholder-zinc-500 focus:outline-none resize-none hide-scrollbar"
                   rows={1}
                   disabled={isLoading}
                 />
@@ -2057,22 +2515,22 @@ export default function App() {
               {isLoading ? (
                 <button
                   onClick={handleStopGeneration}
-                  className="p-3.5 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 bg-white/10 text-white hover:bg-white/20 border border-white/10 shadow-lg"
+                  className="p-2.5 md:p-3.5 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 bg-white/10 text-white hover:bg-white/20 border border-white/10 shadow-lg"
                   title="Stop generating"
                 >
-                  <Square className="w-5 h-5 fill-current" />
+                  <Square className="w-4 h-4 md:w-5 md:h-5 fill-current" />
                 </button>
               ) : (
                 <button
                   onClick={handleSend}
                   disabled={(!input.trim() && attachments.length === 0) || isLoading}
-                  className={`p-3.5 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 ${
+                  className={`p-2.5 md:p-3.5 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 ${
                     (input.trim() || attachments.length > 0) && !isLoading
                       ? `${theme.blob1} text-white shadow-lg shadow-black/50`
                       : 'bg-white/5 text-zinc-600 border border-white/10'
                   }`}
                 >
-                  <Send className="w-5 h-5 ml-0.5" />
+                  <Send className="w-4 h-4 md:w-5 md:h-5 ml-0.5" />
                 </button>
               )}
             </div>
