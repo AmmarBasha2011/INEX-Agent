@@ -670,10 +670,9 @@ export default function App() {
       } else if (call.name === 'generateImage') {
         const key = currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY;
         if (!key) throw new Error("Image API Key is missing. Please add it in Settings.");
-        const imageAi = new GoogleGenAI({ apiKey: key });
-        const res = await imageAi.getGenerativeModel({
+        const imageAi = new GoogleGenAI(key);
+        const res = await imageAi.models.generateContent({
           model: call.args.model || 'gemini-2.5-flash-image',
-        }).generateContent({
           contents: [{ role: 'user', parts: [{ text: call.args.prompt }] }],
         });
         let base64Image = '';
@@ -714,10 +713,9 @@ export default function App() {
         } else {
           const key = currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY;
           if (!key) throw new Error("Image API Key is missing. Please add it in Settings.");
-          const imageAi = new GoogleGenAI({ apiKey: key });
-          const res = await imageAi.getGenerativeModel({
+          const imageAi = new GoogleGenAI(key);
+          const res = await imageAi.models.generateContent({
             model: call.args.model || 'gemini-2.5-flash-image',
-          }).generateContent({
             contents: [{
               role: 'user',
               parts: [
@@ -743,12 +741,11 @@ export default function App() {
       } else if (call.name === 'generateAudio') {
         const key = currentSettings.apiKeys.audio[0] || process.env.GEMINI_API_KEY;
         if (!key) throw new Error("Audio API Key is missing. Please add it in Settings.");
-        const audioAi = new GoogleGenAI({ apiKey: key });
-        const res = await audioAi.getGenerativeModel({
+        const audioAi = new GoogleGenAI(key);
+        const res = await audioAi.models.generateContent({
           model: 'gemini-2.5-flash-preview-tts',
-        }).generateContent({
           contents: [{ role: 'user', parts: [{ text: call.args.text }] }],
-          generationConfig: {
+          config: {
             responseModalities: ['AUDIO'],
             speechConfig: {
               voiceConfig: {
@@ -1115,11 +1112,18 @@ export default function App() {
       }
 
       const aiInstance = new GoogleGenAI({ apiKey: apiKeyToUse });
-      const model = aiInstance.getGenerativeModel(modelConfig);
 
-      const stream = await model.generateContentStream({
-        contents: sanitizedContents
-      });
+      const config: any = {
+        model: selectedLevelObj.model,
+        contents: sanitizedContents,
+      };
+
+      if (!isThinkingModel) {
+        config.systemInstruction = sysInst;
+        config.tools = [{ functionDeclarations: activeTools }];
+      }
+
+      const stream = await aiInstance.models.generateContentStream(config);
 
       let currentText = '';
       let pTokens = 0;
@@ -1138,7 +1142,14 @@ export default function App() {
           if (chunkText) {
             currentText += chunkText;
           }
-        } catch (e) {}
+        } catch (e) {
+          // If chunk.text() fails, try chunk.text property or similar
+          try {
+             // @ts-ignore
+             const t = chunk.text;
+             if (t) currentText += t;
+          } catch(e2) {}
+        }
 
         const usage = chunk.usageMetadata;
         if (usage) {
@@ -1146,7 +1157,7 @@ export default function App() {
           cTokens = usage.candidatesTokenCount || cTokens;
         }
 
-        const calls = chunk.functionCalls();
+        const calls = chunk.functionCalls;
         if (calls && calls.length > 0) {
           functionCallFound = calls[0];
           break;
@@ -1531,16 +1542,18 @@ export default function App() {
       const aiInstance = new GoogleGenAI({ apiKey: apiKeyToUse });
 
       const [resA, resB] = await Promise.all([
-        aiInstance.getGenerativeModel({
+        aiInstance.models.generateContent({
           model: selectedLevelObj.model,
           systemInstruction: configA.systemInstruction,
-          tools: configA.tools,
-        }).generateContent({ contents }),
-        aiInstance.getGenerativeModel({
+          tools: [{ functionDeclarations: activeTools }],
+          contents
+        }),
+        aiInstance.models.generateContent({
           model: selectedLevelObj.model,
           systemInstruction: configB.systemInstruction,
-          tools: configB.tools,
-        }).generateContent({ contents })
+          tools: [{ functionDeclarations: activeTools }],
+          contents
+        })
       ]);
 
       setConversations(prev => prev.map(c => c.id === convId ? {
