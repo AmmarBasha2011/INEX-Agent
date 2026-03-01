@@ -201,7 +201,7 @@ export default function App() {
       
       // Use functional update to get the absolute latest files state
       let idsToDelete: string[] = [];
-      
+
       setFiles(prev => {
         const getChildrenIds = (parentId: string, allFiles: FileNode[]): string[] => {
           const children = allFiles.filter(f => f.parentId === parentId);
@@ -641,10 +641,11 @@ export default function App() {
           }
         }
       } else {
-        result = "Tool not supported.";
+        result = { error: "Tool not supported." };
       }
-    } catch (e) {
-      result = "Error executing tool";
+    } catch (e: any) {
+      console.error("Tool execution error:", e);
+      result = { error: e.message || "Error executing tool" };
     }
 
     const getTokenCount = (obj: any) => {
@@ -1284,7 +1285,7 @@ GPT must follow this protocol in all languages.
         }));
       } else {
         console.error("Error sending message:", error);
-        let errorMsg = 'An error occurred while generating the response. Please try again or select a different model.';
+        let errorMsg = error?.message ? `Error: ${error.message}` : 'An error occurred while generating the response. Please try again or select a different model.';
         if (error?.message?.includes('maximum number of tokens allowed') || error?.message?.includes('exceeds the maximum')) {
           errorMsg = 'Error: The input token count exceeds the maximum allowed by this model (1,048,576 tokens). Please start a new conversation or remove some attachments.';
         }
@@ -1474,11 +1475,11 @@ GPT must follow this protocol in all languages.
           ]
         } : m)
       } : c));
-    } catch (error) {
+    } catch (error: any) {
       console.error("A/B Test Error:", error);
       setConversations(prev => prev.map(c => c.id === convId ? {
         ...c,
-        messages: c.messages.map(m => m.id === modelMessageId ? { ...m, text: 'Error generating variants.', status: 'error' } : m)
+        messages: c.messages.map(m => m.id === modelMessageId ? { ...m, text: error?.message ? `Error generating variants: ${error.message}` : 'Error generating variants.', status: 'error' } : m)
       } : c));
     } finally {
       setIsLoading(false);
@@ -1699,7 +1700,7 @@ GPT must follow this protocol in all languages.
   };
 
   const TaskOutputViewer = ({ name, args, result, cost }: { name: string, args: any, result: any, cost?: number }) => {
-    const [expanded, setExpanded] = useState(false);
+    const [expanded, setExpanded] = useState(result?.error ? true : false);
     return (
       <div className="mt-2 rounded-xl overflow-hidden border border-blue-500/20 bg-blue-500/5 backdrop-blur-md">
         <div className="px-4 py-3 border-b border-blue-500/10 flex items-center justify-between">
@@ -1714,6 +1715,15 @@ GPT must follow this protocol in all languages.
           )}
         </div>
         <div className="p-3 space-y-3">
+          {result?.error && (
+            <div className="bg-red-500/10 rounded-lg p-2.5 border border-red-500/20">
+              <div className="flex items-center gap-2 text-red-400 mb-1">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <div className="text-[10px] uppercase tracking-widest font-bold">Execution Failed</div>
+              </div>
+              <p className="text-[11px] text-red-200/80 leading-relaxed italic">{result.error}</p>
+            </div>
+          )}
           <div className="bg-black/40 rounded-lg p-2.5 border border-white/5">
             <div className="text-[10px] text-zinc-500 uppercase tracking-widest font-bold mb-1.5">Parameters</div>
             <pre className="text-[11px] text-zinc-300 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(args, null, 2)}</pre>
@@ -1747,13 +1757,25 @@ GPT must follow this protocol in all languages.
   };
 
   const ToolOutputViewer = ({ name, result, cost }: { name: string, result: any, cost?: number }) => {
-    const [expanded, setExpanded] = useState(false);
+    const [expanded, setExpanded] = useState(result?.error ? true : false);
     let Icon = Calculator;
     if (name === 'webSearch') Icon = Globe;
     if (name === 'URLFetch') Icon = FileText;
     if (name === 'generateImage') Icon = ImageIcon;
     if (name === 'generateAudio') Icon = Mic;
     if (name.includes('Memory')) Icon = Brain;
+
+    if (result?.error) {
+      return (
+        <div className="mt-2 rounded-xl overflow-hidden border border-red-500/20 bg-red-500/5 backdrop-blur-md p-3">
+          <div className="flex items-center gap-2 text-red-400 mb-2">
+            <AlertTriangle className="w-4 h-4" />
+            <span className="text-sm font-semibold uppercase tracking-wider">Tool Error: {name}</span>
+          </div>
+          <p className="text-sm text-red-200/80 leading-relaxed italic">{result.error}</p>
+        </div>
+      );
+    }
 
     if (result?.imageBase64) {
       return (
