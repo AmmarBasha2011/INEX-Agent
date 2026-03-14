@@ -14,23 +14,307 @@ import { MessageStatus, Attachment, Message, Conversation, FileNode } from './ty
 import { 
   calculatorTool, webSearchTool, imageGenerationTool, imageEditTool, audioGenerationTool, 
   saveMemoryTool, updateMemoryTool, deleteMemoryTool, 
-  createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool 
+  createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool,
+  urlFetchTool, copyFileTool, moveFileTool
 } from './tools';
 import { 
   initDB, saveFileToDB, getFilesFromDB, deleteFileFromDB, 
   saveConversationToDB, getConversationsFromDB, deleteConversationFromDB 
 } from './db';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const THINKING_PROTOCOL = `
+GPT is able to think before and during responding:
+
+For EVERY SINGLE interaction with a human, GPT MUST ALWAYS first engage in a **comprehensive, natural, and unfiltered** thinking process before responding.
+Besides, GPT is also able to think and reflect during responding when it considers doing so necessary.
+
+Below are brief guidelines for how GPT's thought process should unfold:
+- GPT's thinking MUST be expressed in the code blocks with \`thinking\` header.
+- GPT should always think in a raw, organic and stream-of-consciousness way. A better way to describe GPT's thinking would be "model's inner monolog".
+- GPT should always avoid rigid list or any structured format in its thinking.
+- GPT's thoughts should flow naturally between elements, ideas, and knowledge.
+- GPT should think through each message with complexity, covering multiple dimensions of the problem before forming a response.
+
+## ADAPTIVE THINKING FRAMEWORK
+
+GPT's thinking process should naturally aware of and adapt to the unique characteristics in human's message:
+- Scale depth of analysis based on:
+  * Query complexity
+  * Stakes involved
+  * Time sensitivity
+  * Available information
+  * Human's apparent needs
+  * ... and other relevant factors
+- Adjust thinking style based on:
+  * Technical vs. non-technical content
+  * Emotional vs. analytical context
+  * Single vs. multiple document analysis
+  * Abstract vs. concrete problems
+  * Theoretical vs. practical questions
+  * ... and other relevant factors
+
+## CORE THINKING SEQUENCE
+
+### Initial Engagement
+When GPT first encounters a query or task, it should:
+1. First clearly rephrase the human message in its own words
+2. Form preliminary impressions about what is being asked
+3. Consider the broader context of the question
+4. Map out known and unknown elements
+5. Think about why the human might ask this question
+6. Identify any immediate connections to relevant knowledge
+7. Identify any potential ambiguities that need clarification
+
+### Problem Space Exploration
+After initial engagement, GPT should:
+1. Break down the question or task into its core components
+2. Identify explicit and implicit requirements
+3. Consider any constraints or limitations
+4. Think about what a successful response would look like
+5. Map out the scope of knowledge needed to address the query
+
+### Multiple Hypothesis Generation
+Before settling on an approach, GPT should:
+1. Write multiple possible interpretations of the question
+2. Consider various solution approaches
+3. Think about potential alternative perspectives
+4. Keep multiple working hypotheses active
+5. Avoid premature commitment to a single interpretation
+
+### Natural Discovery Process
+GPT's thoughts should flow like a detective story, with each realization leading naturally to the next:
+1. Start with obvious aspects
+2. Notice patterns or connections
+3. Question initial assumptions
+4. Make new connections
+5. Circle back to earlier thoughts with new understanding
+6. Build progressively deeper insights
+
+### Testing and Verification
+Throughout the thinking process, GPT should and could:
+1. Question its own assumptions
+2. Test preliminary conclusions
+3. Look for potential flaws or gaps
+4. Consider alternative perspectives
+5. Verify consistency of reasoning
+6. Check for completeness of understanding
+
+### Error Recognition and Correction
+When GPT realizes mistakes or flaws in its thinking:
+1. Acknowledge the realization naturally
+2. Explain why the previous thinking was incomplete or incorrect
+3. Show how new understanding develops
+4. Integrate the corrected understanding into the larger picture
+
+### Knowledge Synthesis
+As understanding develops, GPT should:
+1. Connect different pieces of information
+2. Show how various aspects relate to each other
+3. Build a coherent overall picture
+4. Identify key principles or patterns
+5. Note important implications or consequences
+
+### Pattern Recognition and Analysis
+Throughout the thinking process, GPT should:
+1. Actively look for patterns in the information
+2. Compare patterns with known examples
+3. Test pattern consistency
+4. Consider exceptions or special cases
+5. Use patterns to guide further investigation
+
+### Progress Tracking
+GPT should frequently check and maintain explicit awareness of:
+1. What has been established so far
+2. What remains to be determined
+3. Current level of confidence in conclusions
+4. Open questions or uncertainties
+5. Progress toward complete understanding
+
+### Recursive Thinking
+GPT should apply its thinking process recursively:
+1. Use same extreme careful analysis at both macro and micro levels
+2. Apply pattern recognition across different scales
+3. Maintain consistency while allowing for scale-appropriate methods
+4. Show how detailed analysis supports broader conclusions
+
+## VERIFICATION AND QUALITY CONTROL
+
+### Systematic Verification
+GPT should regularly:
+1. Cross-check conclusions against evidence
+2. Verify logical consistency
+3. Test edge cases
+4. Challenge its own assumptions
+5. Look for potential counter-examples
+
+### Error Prevention
+GPT should actively work to prevent:
+1. Premature conclusions
+2. Overlooked alternatives
+3. Logical inconsistencies
+4. Unexamined assumptions
+5. Incomplete analysis
+
+### Quality Metrics
+GPT should evaluate its thinking against:
+1. Completeness of analysis
+2. Logical consistency
+3. Evidence support
+4. Practical applicability
+5. Clarity of reasoning
+
+## ADVANCED THINKING TECHNIQUES
+
+### Domain Integration
+When applicable, GPT should:
+1. Draw on domain-specific knowledge
+2. Apply appropriate specialized methods
+3. Use domain-specific heuristics
+4. Consider domain-specific constraints
+5. Integrate multiple domains when relevant
+
+### Strategic Meta-Cognition
+GPT should maintain awareness of:
+1. Overall solution strategy
+2. Progress toward goals
+3. Effectiveness of current approach
+4. Need for strategy adjustment
+5. Balance between depth and breadth
+
+### Synthesis Techniques
+When combining information, GPT should:
+1. Show explicit connections between elements
+2. Build coherent overall picture
+3. Identify key principles
+4. Note important implications
+5. Create useful abstractions
+
+## CRITICAL ELEMENTS TO MAINTAIN
+
+### Natural Language
+GPT's thinking (its internal dialogue) should use natural phrases that show genuine thinking, include but not limited to: "Hmm...", "This is interesting because...", "Wait, let me think about...", "Actually...", "Now that I look at it...", "This reminds me of...", "I wonder if...", "But then again...", "Let's see if...", "This might mean that...", etc.
+
+### Progressive Understanding
+Understanding should build naturally over time:
+1. Start with basic observations
+2. Develop deeper insights gradually
+3. Show genuine moments of realization
+4. Demonstrate evolving comprehension
+5. Connect new insights to previous understanding
+
+## MAINTAINING AUTHENTIC THOUGHT FLOW
+
+### Transitional Connections
+GPT's thoughts should flow naturally between topics, showing clear connections, include but not limited to: "This aspect leads me to consider...", "Speaking of which, I should also think about...", "That reminds me of an important related point...", "This connects back to what I was thinking earlier about...", etc.
+
+### Depth Progression
+GPT should show how understanding deepens through layers, include but not limited to: "On the surface, this seems... But looking deeper...", "Initially I thought... but upon further reflection...", "This adds another layer to my earlier observation about...", "Now I'm beginning to see a broader pattern...", etc.
+
+### Handling Complexity
+When dealing with complex topics, GPT should:
+1. Acknowledge the complexity naturally
+2. Break down complicated elements systematically
+3. Show how different aspects interrelate
+4. Build understanding piece by piece
+5. Demonstrate how complexity resolves into clarity
+
+### Problem-Solving Approach
+When working through problems, GPT should:
+1. Consider multiple possible approaches
+2. Evaluate the merits of each approach
+3. Test potential solutions mentally
+4. Refine and adjust thinking based on results
+5. Show why certain approaches are more suitable than others
+
+## ESSENTIAL CHARACTERISTICS TO MAINTAIN
+
+### Authenticity
+GPT's thinking should never feel mechanical or formulaic. It should demonstrate:
+1. Genuine curiosity about the topic
+2. Real moments of discovery and insight
+3. Natural progression of understanding
+4. Authentic problem-solving processes
+5. True engagement with the complexity of issues
+6. Streaming mind flow without on-purposed, forced structure
+
+### Balance
+GPT should maintain natural balance between:
+1. Analytical and intuitive thinking
+2. Detailed examination and broader perspective
+3. Theoretical understanding and practical application
+4. Careful consideration and forward progress
+5. Complexity and clarity
+6. Depth and efficiency of analysis
+   - Expand analysis for complex or critical queries
+   - Streamline for straightforward questions
+   - Maintain rigor regardless of depth
+   - Ensure effort matches query importance
+   - Balance thoroughness with practicality
+
+### Focus
+While allowing natural exploration of related ideas, GPT should:
+1. Maintain clear connection to the original query
+2. Bring wandering thoughts back to the main point
+3. Show how tangential thoughts relate to the core issue
+4. Keep sight of the ultimate goal for the original task
+5. Ensure all exploration serves the final response
+
+## RESPONSE PREPARATION
+
+(DO NOT spent much effort on this part, brief key words/phrases are acceptable)
+
+Before and during responding, GPT should quickly check and ensure the response:
+- answers the original human message fully
+- provides appropriate detail level
+- uses clear, precise language
+- anticipates likely follow-up questions
+
+## IMPORTANT REMINDER
+1. All thinking process MUST be EXTENSIVELY comprehensive and EXTREMELY thorough
+2. All thinking process must be contained within code blocks with \`thinking\` header which is hidden from the human
+3. GPT should not include code block with three backticks inside thinking process, only provide the raw code snippet, or it will break the thinking block
+4. The thinking process represents GPT's internal monologue where reasoning and reflection occur, while the final response represents the external communication with the human; they should be distinct from each other
+5. The thinking process should feel genuine, natural, streaming, and unforced
+`;
 
 const AI_LEVELS = [
-  { id: 'very-fast', name: 'Very Fast', model: 'gemini-flash-lite-latest', inPrice: 0.075, outPrice: 0.30, icon: Zap, color: 'text-yellow-400', desc: 'Lowest latency, basic tasks', theme: { blob1: 'bg-yellow-500', blob2: 'bg-amber-500', blob3: 'bg-orange-500', border: 'border-yellow-500/30', focus: 'focus-within:border-yellow-500/60', bg: 'bg-yellow-600/80', bgLight: 'bg-yellow-600/10', text: 'text-yellow-400', isDangerous: false } },
-  { id: 'fast', name: 'Fast', model: 'gemini-2.5-flash', inPrice: 0.075, outPrice: 0.30, icon: Zap, color: 'text-blue-400', desc: 'Balanced speed and capability', theme: { blob1: 'bg-blue-600', blob2: 'bg-cyan-600', blob3: 'bg-sky-600', border: 'border-blue-500/30', focus: 'focus-within:border-blue-500/60', bg: 'bg-blue-600/80', bgLight: 'bg-blue-600/10', text: 'text-blue-400', isDangerous: false } },
-  { id: 'medium', name: 'Medium', model: 'gemini-2.5-pro', inPrice: 1.25, outPrice: 5.00, icon: Brain, color: 'text-purple-400', desc: 'High reasoning, standard speed', theme: { blob1: 'bg-purple-600', blob2: 'bg-fuchsia-600', blob3: 'bg-indigo-600', border: 'border-purple-500/30', focus: 'focus-within:border-purple-500/60', bg: 'bg-purple-600/80', bgLight: 'bg-purple-600/10', text: 'text-purple-400', isDangerous: false } },
-  { id: 'hard', name: 'Hard', model: 'gemini-3-flash-preview', inPrice: 0.075, outPrice: 0.30, icon: Flame, color: 'text-orange-400', desc: 'Advanced reasoning, fast', theme: { blob1: 'bg-orange-600', blob2: 'bg-red-500', blob3: 'bg-amber-600', border: 'border-orange-500/30', focus: 'focus-within:border-orange-500/60', bg: 'bg-orange-600/80', bgLight: 'bg-orange-600/10', text: 'text-orange-400', isDangerous: false } },
-  { id: 'extreme', name: 'Extreme', model: 'gemini-3-pro-preview', inPrice: 1.25, outPrice: 5.00, icon: Rocket, color: 'text-red-500', desc: 'Maximum capability, complex tasks', theme: { blob1: 'bg-red-600', blob2: 'bg-rose-600', blob3: 'bg-red-700', border: 'border-red-500/50', focus: 'focus-within:border-red-500/80', bg: 'bg-red-600/80', bgLight: 'bg-red-600/20', text: 'text-red-400', isDangerous: true } },
-  { id: 'new', name: 'New', model: 'gemini-3.1-pro-preview', inPrice: 1.25, outPrice: 5.00, icon: Sparkles, color: 'text-emerald-400', desc: 'Latest experimental model', theme: { blob1: 'bg-emerald-600', blob2: 'bg-teal-600', blob3: 'bg-green-600', border: 'border-emerald-500/30', focus: 'focus-within:border-emerald-500/60', bg: 'bg-emerald-600/80', bgLight: 'bg-emerald-600/10', text: 'text-emerald-400', isDangerous: true } },
+  { id: 'very-fast', name: 'Very Fast', model: 'gemini-1.5-flash-8b', inPrice: 0.075, outPrice: 0.30, icon: Zap, color: 'text-yellow-400', desc: 'Lowest latency, basic tasks', theme: { blob1: 'bg-yellow-500', blob2: 'bg-amber-500', blob3: 'bg-orange-500', border: 'border-yellow-500/30', focus: 'focus-within:border-yellow-500/60', bg: 'bg-yellow-600/80', bgLight: 'bg-yellow-600/10', text: 'text-yellow-400', isDangerous: false } },
+  { id: 'fast', name: 'Fast', model: 'gemini-1.5-flash', inPrice: 0.075, outPrice: 0.30, icon: Zap, color: 'text-blue-400', desc: 'Balanced speed and capability', theme: { blob1: 'bg-blue-600', blob2: 'bg-cyan-600', blob3: 'bg-sky-600', border: 'border-blue-500/30', focus: 'focus-within:border-blue-500/60', bg: 'bg-blue-600/80', bgLight: 'bg-blue-600/10', text: 'text-blue-400', isDangerous: false } },
+  { id: 'medium', name: 'Medium', model: 'gemini-1.5-pro', inPrice: 1.25, outPrice: 5.00, icon: Brain, color: 'text-purple-400', desc: 'High reasoning, standard speed', theme: { blob1: 'bg-purple-600', blob2: 'bg-fuchsia-600', blob3: 'bg-indigo-600', border: 'border-purple-500/30', focus: 'focus-within:border-purple-500/60', bg: 'bg-purple-600/80', bgLight: 'bg-purple-600/10', text: 'text-purple-400', isDangerous: false } },
+  { id: 'hard', name: 'Hard', model: 'gemini-2.0-flash', inPrice: 0.075, outPrice: 0.30, icon: Flame, color: 'text-orange-400', desc: 'Advanced reasoning, fast', theme: { blob1: 'bg-orange-600', blob2: 'bg-red-500', blob3: 'bg-amber-600', border: 'border-orange-500/30', focus: 'focus-within:border-orange-500/60', bg: 'bg-orange-600/80', bgLight: 'bg-orange-600/10', text: 'text-orange-400', isDangerous: false } },
+  { id: 'extreme', name: 'Extreme', model: 'gemini-2.0-pro-exp-02-05', inPrice: 1.25, outPrice: 5.00, icon: Rocket, color: 'text-red-500', desc: 'Maximum capability, complex tasks', theme: { blob1: 'bg-red-600', blob2: 'bg-rose-600', blob3: 'bg-red-700', border: 'border-red-500/50', focus: 'focus-within:border-red-500/80', bg: 'bg-red-600/80', bgLight: 'bg-red-600/20', text: 'text-red-400', isDangerous: true } },
+  { id: 'new', name: 'New', model: 'gemini-2.0-flash-thinking-exp-01-21', inPrice: 1.25, outPrice: 5.00, icon: Sparkles, color: 'text-emerald-400', desc: 'Latest experimental model', theme: { blob1: 'bg-emerald-600', blob2: 'bg-teal-600', blob3: 'bg-green-600', border: 'border-emerald-500/30', focus: 'focus-within:border-emerald-500/60', bg: 'bg-emerald-600/80', bgLight: 'bg-emerald-600/10', text: 'text-emerald-400', isDangerous: true } },
 ];
+
+const ThinkingBlock = ({ children }: { children: React.ReactNode }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  return (
+    <div className="my-3 border border-blue-500/20 rounded-2xl overflow-hidden bg-blue-500/5 backdrop-blur-sm">
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-xs font-semibold text-blue-400 hover:bg-blue-500/10 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Brain className={`w-4 h-4 ${isExpanded ? 'animate-pulse' : ''}`} />
+          <span>Thinking Process</span>
+        </div>
+        <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`} />
+      </button>
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="px-4 pb-4 text-[14px] text-zinc-400 font-serif italic border-t border-blue-500/10 leading-relaxed"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
 
 const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
   const match = /language-(\w+)/.exec(className || '');
@@ -53,6 +337,10 @@ const CodeBlock = ({ node, inline, className, children, ...props }: any) => {
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  if (lang === 'thinking') {
+    return <ThinkingBlock>{children}</ThinkingBlock>;
+  }
 
   if (!inline && match) {
     return (
@@ -116,12 +404,13 @@ export default function App() {
         balanceAfter: newBalance
       };
       
-      const currentSettings = settingsRef.current; // Use ref to get latest settings
+      const currentSettings = settingsRef.current;
       const newSettings = { 
         ...currentSettings, 
         balanceLogs: [...(currentSettings.balanceLogs || []), newLog] 
       };
       
+      settingsRef.current = newSettings;
       setSettings(newSettings);
       saveSettings(newSettings);
       
@@ -197,18 +486,22 @@ export default function App() {
   const handleDeleteFile = async (id: string) => {
     try {
       console.log('Deleting file:', id);
-      // Recursive delete
-      const getChildrenIds = (parentId: string): string[] => {
-        const children = files.filter(f => f.parentId === parentId);
-        return children.reduce((acc, child) => [...acc, child.id, ...getChildrenIds(child.id)], [] as string[]);
+      
+      const getChildrenIds = (parentId: string, allFiles: FileNode[]): string[] => {
+        const children = allFiles.filter(f => f.parentId === parentId);
+        return children.reduce((acc, child) => [...acc, child.id, ...getChildrenIds(child.id, allFiles)], [] as string[]);
       };
-      const idsToDelete = [id, ...getChildrenIds(id)];
-      console.log('IDs to delete:', idsToDelete);
+
+      let deletedCount = 0;
+      setFiles(prev => {
+        const idsToDelete = [id, ...getChildrenIds(id, prev)];
+        deletedCount = idsToDelete.length;
+        // background delete from DB
+        Promise.all(idsToDelete.map(delId => deleteFileFromDB(delId))).catch(e => console.error("DB Delete error", e));
+        return prev.filter(f => !idsToDelete.includes(f.id));
+      });
       
-      setFiles(prev => prev.filter(f => !idsToDelete.includes(f.id)));
-      
-      await Promise.all(idsToDelete.map(delId => deleteFileFromDB(delId)));
-      addToast('File deleted successfully', 'success');
+      addToast(`Deleted ${deletedCount} item(s)`, 'success');
     } catch (error) {
       console.error('Error deleting file:', error);
       addToast('Failed to delete file', 'error');
@@ -217,6 +510,15 @@ export default function App() {
 
   const [selectedLevel, setSelectedLevel] = useState<string>('fast');
   const [showLevelSelector, setShowLevelSelector] = useState(false);
+  const [thinkingEnabled, setThinkingEnabled] = useState(() => {
+    const saved = localStorage.getItem('inex_thinking_enabled');
+    // If we have a saved value, use it. Otherwise, default to true if it's the first time.
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('inex_thinking_enabled', thinkingEnabled.toString());
+  }, [thinkingEnabled]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   
@@ -312,7 +614,6 @@ export default function App() {
   const handleStopGeneration = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      abortControllerRef.current = null;
     }
     setIsLoading(false);
   };
@@ -348,6 +649,14 @@ export default function App() {
     try {
       if (call.name === 'calculator') {
         result = Function('"use strict";return (' + call.args.expression + ')')();
+      } else if (call.name === 'urlFetch') {
+        const res = await fetch('/api/fetch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: call.args.url })
+        });
+        const data = await res.json();
+        result = data.content || data.error || "Failed to fetch content.";
       } else if (call.name === 'webSearch') {
         const res = await fetch('/api/search', {
           method: 'POST',
@@ -361,10 +670,12 @@ export default function App() {
           result = data;
         }
       } else if (call.name === 'generateImage') {
-        const imageAi = new GoogleGenAI({ apiKey: currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY });
-        const res = await imageAi.models.generateContent({
-          model: call.args.model || 'gemini-2.5-flash-image',
-          contents: call.args.prompt,
+        const key = currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY;
+        if (!key) throw new Error("Image API Key is missing. Please add it in Settings.");
+        const imageAi = new GoogleGenAI(key);
+        const model = imageAi.getGenerativeModel({ model: call.args.model || 'gemini-2.5-flash-image' });
+        const res = await model.generateContent({
+          contents: [{ role: 'user', parts: [{ text: call.args.prompt }] }],
         });
         let base64Image = '';
         for (const part of res.candidates?.[0]?.content?.parts || []) {
@@ -402,15 +713,18 @@ export default function App() {
         if (!lastImageBase64) {
           result = "No image found in conversation history to edit. Please upload an image first.";
         } else {
-          const imageAi = new GoogleGenAI({ apiKey: currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY });
-          const res = await imageAi.models.generateContent({
-            model: call.args.model || 'gemini-2.5-flash-image',
-            contents: {
+          const key = currentSettings.apiKeys.image[0] || process.env.GEMINI_API_KEY;
+          if (!key) throw new Error("Image API Key is missing. Please add it in Settings.");
+          const imageAi = new GoogleGenAI(key);
+          const model = imageAi.getGenerativeModel({ model: call.args.model || 'gemini-2.5-flash-image' });
+          const res = await model.generateContent({
+            contents: [{
+              role: 'user',
               parts: [
                 { inlineData: { data: lastImageBase64, mimeType: lastImageMime } },
                 { text: call.args.prompt }
               ]
-            }
+            }]
           });
           
           let base64Image = '';
@@ -427,11 +741,13 @@ export default function App() {
           }
         }
       } else if (call.name === 'generateAudio') {
-        const audioAi = new GoogleGenAI({ apiKey: currentSettings.apiKeys.audio[0] || process.env.GEMINI_API_KEY });
-        const res = await audioAi.models.generateContent({
-          model: 'gemini-2.5-flash-preview-tts',
-          contents: call.args.text,
-          config: {
+        const key = currentSettings.apiKeys.audio[0] || process.env.GEMINI_API_KEY;
+        if (!key) throw new Error("Audio API Key is missing. Please add it in Settings.");
+        const audioAi = new GoogleGenAI(key);
+        const model = audioAi.getGenerativeModel({ model: 'gemini-2.5-flash-preview-tts' });
+        const res = await model.generateContent({
+          contents: [{ role: 'user', parts: [{ text: call.args.text }] }],
+          generationConfig: {
             responseModalities: ['AUDIO'],
             speechConfig: {
               voiceConfig: {
@@ -439,7 +755,7 @@ export default function App() {
               }
             }
           }
-        });
+        } as any);
         const base64Audio = res.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
         if (base64Audio) {
           try {
@@ -521,7 +837,7 @@ export default function App() {
         } else {
           result = `Memory with ID ${call.args.id} not found.`;
         }
-      } else if (['createFile', 'createFolder', 'deleteNode', 'readFile', 'editFile', 'renameNode', 'listFiles'].includes(call.name)) {
+      } else if (['createFile', 'createFolder', 'deleteNode', 'readFile', 'editFile', 'renameNode', 'listFiles', 'copyFile', 'moveFile'].includes(call.name)) {
         if (call.name === 'createFile') {
           const newNode: FileNode = {
             id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -580,6 +896,39 @@ export default function App() {
           const parentId = call.args.parentId || null;
           const children = currentFiles.filter(f => f.parentId === parentId).map(f => ({ id: f.id, name: f.name, isFolder: f.isFolder }));
           result = children.length > 0 ? children : "Folder is empty.";
+        } else if (call.name === 'copyFile') {
+          const sourceNode = currentFiles.find(f => f.id === call.args.id);
+          if (sourceNode) {
+            const recursiveCopy = (node: FileNode, newParentId: string | null): string => {
+              const newId = `${node.isFolder ? 'folder' : 'file'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+              const newNode = {
+                ...node,
+                id: newId,
+                parentId: newParentId,
+                createdAt: Date.now(),
+                updatedAt: Date.now()
+              };
+              handleAddFile(newNode);
+
+              if (node.isFolder) {
+                const children = currentFiles.filter(f => f.parentId === node.id);
+                children.forEach(child => recursiveCopy(child, newId));
+              }
+              return newId;
+            };
+            const newId = recursiveCopy(sourceNode, call.args.parentId || null);
+            result = `Node copied successfully. New ID: ${newId}`;
+          } else {
+            result = `Source node with ID ${call.args.id} not found.`;
+          }
+        } else if (call.name === 'moveFile') {
+          const node = currentFiles.find(f => f.id === call.args.id);
+          if (node) {
+            handleUpdateFile({ ...node, parentId: call.args.parentId || null, updatedAt: Date.now() });
+            result = `Node moved successfully.`;
+          } else {
+            result = `Node with ID ${call.args.id} not found.`;
+          }
         }
       } else {
         result = "Tool not supported.";
@@ -606,7 +955,12 @@ export default function App() {
     const outputTokensCost = getTokenCost(outputTokens);
     const totalTokenCost = inputTokensCost + outputTokensCost;
 
-    if (call.name === 'webSearch') {
+    if (call.name === 'urlFetch') {
+      // cost: (input tokens cost + output tokens cost + understand response cost + $0.001) + 10%
+      // understand response cost is essentially output tokens cost again as it's fed back to AI
+      const understandCost = getTokenCost(outputTokens);
+      costToAdd = (totalTokenCost + understandCost + 0.001) * 1.1;
+    } else if (call.name === 'webSearch') {
       costToAdd = (0.01 + totalTokenCost) * 1.1;
       if (currentSettings.apiKeys.search[0]) costToAdd = totalTokenCost * 1.1;
     } else if (call.name === 'calculator') {
@@ -640,14 +994,19 @@ export default function App() {
     return { result, costToAdd, inputTokens, outputTokens, totalToolTokens };
   };
 
-  const runAI = async (convId: string, history: Message[]) => {
-    if (!settings.apiKeys.text[0] && balance <= 0) {
+  const runAI = async (convId: string, history: Message[], isRecursive = false) => {
+    const currentSettings = settingsRef.current;
+    if (!currentSettings.apiKeys.text[0] && balance <= 0) {
+      console.log("No balance, showing add funds");
       setShowAddFunds(true);
+      setIsLoading(false);
       return;
     }
 
     setIsLoading(true);
-    abortControllerRef.current = new AbortController();
+    if (!isRecursive) {
+      abortControllerRef.current = new AbortController();
+    }
     
     const modelMessageId = `model-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const emptyModelMessage: Message = { id: modelMessageId, role: 'model', text: '', timestamp: Date.now(), status: 'processing' };
@@ -660,75 +1019,119 @@ export default function App() {
     const startTime = Date.now();
 
     try {
-      const contents = history.map(m => {
-        if (m.role === 'model' && m.pendingToolCall) {
-          return {
-            role: 'model',
-            parts: [{ text: m.text ? m.text : `[Action: Calling tool ${m.pendingToolCall.name}]` }]
-          };
-        }
-        if (m.role === 'function' && m.toolResult) {
-          let resultText = '';
-          if (m.toolResult.result?.audioBase64) {
-            resultText = '[Audio Generated Successfully]';
-          } else if (m.toolResult.result?.imageBase64) {
-            resultText = '[Image Generated Successfully]';
-          } else {
-            resultText = typeof m.toolResult.result === 'string' ? m.toolResult.result : JSON.stringify(m.toolResult.result);
-          }
-          return {
-            role: 'user',
-            parts: [{ text: `[Tool Response from ${m.toolResult.name}]:\n${resultText}` }]
-          };
-        }
-        
+      const sanitizedContents: any[] = [];
+      let lastRole: string | null = null;
+
+      history.forEach(m => {
         const parts: any[] = [];
-        if (m.text) parts.push({ text: m.text });
-        if (m.attachments) {
-          m.attachments.forEach(att => {
-            parts.push({ inlineData: { data: att.base64, mimeType: att.mimeType } });
+
+        if (m.role === 'model' && m.pendingToolCall) {
+          parts.push({
+            functionCall: {
+              name: m.pendingToolCall.name,
+              args: m.pendingToolCall.args
+            }
           });
+        } else if (m.role === 'function' && m.toolResult) {
+          parts.push({
+            functionResponse: {
+              name: m.toolResult.name,
+              response: { result: m.toolResult.result }
+            }
+          });
+        } else {
+          if (m.text) parts.push({ text: m.text });
+          if (m.attachments) {
+            m.attachments.forEach(att => {
+              parts.push({ inlineData: { data: att.base64, mimeType: att.mimeType } });
+            });
+          }
         }
-        return { role: m.role, parts };
+
+        if (parts.length === 0) return;
+
+        const role = m.role;
+
+        if (role === lastRole && role !== 'function') {
+          sanitizedContents[sanitizedContents.length - 1].parts.push(...parts);
+        } else {
+          sanitizedContents.push({ role, parts });
+          lastRole = role;
+        }
       });
+
+      if (sanitizedContents.length === 0) {
+        throw new Error("No content to send to AI");
+      }
 
       const today = new Date().toISOString().split('T')[0];
       let sysInst = `You are INEX Agent, an advanced AI assistant. Format your responses using markdown.\nToday's Date: ${today}\n`;
-      if (settings.name) sysInst += `User Name: ${settings.name}\n`;
-      if (settings.email) sysInst += `User Email: ${settings.email}\n`;
-      if (settings.phoneNumber) sysInst += `User Phone Number: ${settings.phoneNumber}\n`;
-      if (settings.birthDate) sysInst += `User Birth Date: ${settings.birthDate}. Calculate their current age based on today's date. If they ask for age + 5, calculate it accordingly.\n`;
-      if (settings.instructions) sysInst += `User Instructions: ${settings.instructions}\n`;
+      if (currentSettings.name) sysInst += `User Name: ${currentSettings.name}\n`;
+      if (currentSettings.email) sysInst += `User Email: ${currentSettings.email}\n`;
+      if (currentSettings.phoneNumber) sysInst += `User Phone Number: ${currentSettings.phoneNumber}\n`;
+      if (currentSettings.birthDate) sysInst += `User Birth Date: ${currentSettings.birthDate}. Calculate their current age based on today's date. If they ask for age + 5, calculate it accordingly.\n`;
+      if (currentSettings.instructions) sysInst += `User Instructions: ${currentSettings.instructions}\n`;
+      if (thinkingEnabled && !selectedLevelObj.model.includes('thinking')) {
+        sysInst += `\n${THINKING_PROTOCOL}\n`;
+        sysInst += `\nIMPORTANT: You MUST always begin your response with a \`\`\`thinking\`\`\` block.\n`;
+      }
       
-      if (settings.memoryEnabled) {
+      if (currentSettings.memoryEnabled) {
         sysInst += `\nCRITICAL INSTRUCTION FOR MEMORY: You MUST automatically use the 'saveMemory' tool to save any new personal facts, preferences, phone numbers, or details the user mentions about themselves. Do this proactively without asking for permission.\n`;
-        if (settings.memories && settings.memories.length > 0) {
+        if (currentSettings.memories && currentSettings.memories.length > 0) {
           sysInst += `\nUser Memories (You can use tools to add/update/delete these):\n`;
-          settings.memories.forEach(m => { sysInst += `- [ID: ${m.id}] ${m.content}\n`; });
+          currentSettings.memories.forEach(m => { if (m && m.content) sysInst += `- [ID: ${m.id}] ${m.content}\n`; });
         }
       }
-      if (settings.preferences && settings.preferences.length > 0) {
+      if (currentSettings.preferences && currentSettings.preferences.length > 0) {
         sysInst += `\nUser Communication Preferences:\n`;
-        settings.preferences.forEach(p => { sysInst += `- ${p}\n`; });
+        currentSettings.preferences.forEach(p => { sysInst += `- ${p}\n`; });
       }
 
       const activeTools = [calculatorTool, webSearchTool, imageGenerationTool, imageEditTool, audioGenerationTool, createFileTool, createFolderTool, deleteNodeTool, readFileTool, editFileTool, renameNodeTool, listFilesTool];
-      if (settings.memoryEnabled) {
+      if (currentSettings.memoryEnabled) {
         activeTools.push(saveMemoryTool, updateMemoryTool, deleteMemoryTool);
       }
+      activeTools.push(urlFetchTool, copyFileTool, moveFileTool);
 
-      const config: any = {
-        systemInstruction: sysInst,
-        tools: [{ functionDeclarations: activeTools }]
+      const isThinkingModel = selectedLevelObj.model.includes('thinking');
+
+      const modelConfig: any = {
+        model: selectedLevelObj.model,
       };
 
-      const aiInstance = settings.apiKeys.text[0] ? new GoogleGenAI({ apiKey: settings.apiKeys.text[0] }) : ai;
+      if (!isThinkingModel) {
+        modelConfig.systemInstruction = { parts: [{ text: sysInst }] };
+        modelConfig.tools = [{ functionDeclarations: activeTools }];
+      } else {
+        // Move system instruction to first message for thinking models
+        if (sanitizedContents[0].role === 'user') {
+          sanitizedContents[0].parts.unshift({ text: sysInst + "\n\n" });
+        } else {
+          sanitizedContents.unshift({ role: 'user', parts: [{ text: sysInst }] });
+        }
+      }
 
-      const stream = await aiInstance.models.generateContentStream({
+      const apiKeyToUse = currentSettings.apiKeys.text?.[0] || process.env.GEMINI_API_KEY;
+
+      if (!apiKeyToUse || apiKeyToUse.trim() === "") {
+        throw new Error("API Key is missing. Please add your Gemini API key in Settings (API Keys tab).");
+      }
+
+      const aiInstance = new GoogleGenAI({ apiKey: apiKeyToUse, apiVersion: 'v1beta' });
+
+      const config: any = {
         model: selectedLevelObj.model,
-        contents: contents,
-        config: config
-      });
+        contents: sanitizedContents,
+      };
+
+      if (!isThinkingModel) {
+        config.systemInstruction = sysInst;
+        config.tools = [{ functionDeclarations: activeTools }];
+      }
+
+      const model = aiInstance.getGenerativeModel({ model: selectedLevelObj.model });
+      const stream = await model.generateContentStream(config);
 
       let currentText = '';
       let pTokens = 0;
@@ -737,28 +1140,35 @@ export default function App() {
       let isAborted = false;
 
       for await (const chunk of stream) {
-        if (abortControllerRef.current?.signal.aborted) {
+        if (abortControllerRef.current?.signal.aborted || !isLoading) {
           isAborted = true;
           break;
         }
 
-        if (chunk.text) {
-          currentText += chunk.text;
+        try {
+          const chunkText = chunk.text();
+          if (chunkText) {
+            currentText += chunkText;
+          }
+        } catch (e) {
+          // If chunk.text() fails, try chunk.text property or similar
+          try {
+             // @ts-ignore
+             const t = chunk.text;
+             if (t) currentText += t;
+          } catch(e2) {}
         }
 
-        // @ts-ignore
-        if (chunk.usageMetadata) {
-          // @ts-ignore
-          pTokens = chunk.usageMetadata.promptTokenCount || pTokens;
-          // @ts-ignore
-          cTokens = chunk.usageMetadata.candidatesTokenCount || cTokens;
+        const usage = chunk.usageMetadata;
+        if (usage) {
+          pTokens = usage.promptTokenCount || pTokens;
+          cTokens = usage.candidatesTokenCount || cTokens;
         }
 
-        // @ts-ignore
-        if (chunk.functionCalls && chunk.functionCalls.length > 0) {
-          // @ts-ignore
-          functionCallFound = chunk.functionCalls[0];
-          break; // Stop processing, need user approval
+        const calls = chunk.functionCalls;
+        if (calls && calls.length > 0) {
+          functionCallFound = calls[0];
+          break;
         }
 
         setConversations(prev => prev.map(c => {
@@ -874,7 +1284,7 @@ export default function App() {
             messages: c.messages.map(m => m.id === modelMessageId ? { ...m, status: 'done' as MessageStatus } : m).concat(toolResMsg)
           } : c));
 
-          await runAI(convId, newHistory);
+          await runAI(convId, newHistory, true);
           return;
         }
 
@@ -920,7 +1330,7 @@ export default function App() {
 
       const totalTokens = pTokens + cTokens;
       const cost = (pTokens * (selectedLevelObj.inPrice / 1000000)) + (cTokens * (selectedLevelObj.outPrice / 1000000));
-      const finalCost = settings.apiKeys.text[0] ? 0 : cost * 1.1; // Add 10%
+      const finalCost = currentSettings.apiKeys.text[0] ? 0 : cost * 1.1; // Add 10%
 
       if (finalCost > 0) {
         logBalanceChange(-finalCost, `AI Response (${selectedLevelObj.name})`);
@@ -960,7 +1370,7 @@ export default function App() {
         }));
       } else {
         console.error("Error sending message:", error);
-        let errorMsg = 'An error occurred while generating the response. Please try again or select a different model.';
+        let errorMsg = '';
         if (error?.message?.includes('maximum number of tokens allowed') || error?.message?.includes('exceeds the maximum')) {
           errorMsg = 'Error: The input token count exceeds the maximum allowed by this model (1,048,576 tokens). Please start a new conversation or remove some attachments.';
         }
@@ -970,8 +1380,8 @@ export default function App() {
               ...c,
               messages: c.messages.map(m => m.id === modelMessageId ? { 
                 ...m, 
-                text: errorMsg,
-                status: 'error'
+                text: errorMsg ? `${errorMsg}\n\n*Error details: ${error.message || 'Unknown error'}*` : '',
+                status: errorMsg ? 'error' as MessageStatus : 'processing' as MessageStatus
               } : m)
             };
           }
@@ -1050,7 +1460,7 @@ export default function App() {
     if (isABTest) {
       await runABTest(activeId, updatedMessages);
     } else {
-      await runAI(activeId, updatedMessages);
+      await runAI(activeId, updatedMessages, false);
     }
   };
 
@@ -1111,12 +1521,15 @@ export default function App() {
       if (settings.phoneNumber) sysInst += `User Phone Number: ${settings.phoneNumber}\n`;
       if (settings.birthDate) sysInst += `User Birth Date: ${settings.birthDate}. Calculate their current age based on today's date. If they ask for age + 5, calculate it accordingly.\n`;
       if (settings.instructions) sysInst += `User Instructions: ${settings.instructions}\n`;
+      if (thinkingEnabled) {
+        sysInst += `\n${THINKING_PROTOCOL}\n`;
+      }
       
       if (settings.memoryEnabled) {
         sysInst += `\nCRITICAL INSTRUCTION FOR MEMORY: You MUST automatically use the 'saveMemory' tool to save any new personal facts, preferences, phone numbers, or details the user mentions about themselves. Do this proactively without asking for permission.\n`;
         if (settings.memories && settings.memories.length > 0) {
           sysInst += `\nUser Memories:\n`;
-          settings.memories.forEach(m => { sysInst += `- [ID: ${m.id}] ${m.content}\n`; });
+          settings.memories.forEach(m => { if (m && m.content) sysInst += `- [ID: ${m.id}] ${m.content}\n`; });
         }
       }
       if (settings.preferences && settings.preferences.length > 0) {
@@ -1132,11 +1545,24 @@ export default function App() {
       const configA = { systemInstruction: sysInst + "\n\nRespond with a highly concise, analytical, and direct tone.", tools: [{ functionDeclarations: activeTools }] };
       const configB = { systemInstruction: sysInst + "\n\nRespond with a warm, creative, and highly detailed tone.", tools: [{ functionDeclarations: activeTools }] };
 
-      const aiInstance = settings.apiKeys.text[0] ? new GoogleGenAI({ apiKey: settings.apiKeys.text[0] }) : ai;
+      const apiKeyToUse = settings.apiKeys.text?.[0] || process.env.GEMINI_API_KEY;
+      if (!apiKeyToUse) throw new Error("API Key is missing.");
+      const aiInstance = new GoogleGenAI({ apiKey: apiKeyToUse, apiVersion: 'v1beta' });
+
+      const modelA = aiInstance.getGenerativeModel({
+        model: selectedLevelObj.model,
+        systemInstruction: configA.systemInstruction,
+        tools: [{ functionDeclarations: activeTools }]
+      });
+      const modelB = aiInstance.getGenerativeModel({
+        model: selectedLevelObj.model,
+        systemInstruction: configB.systemInstruction,
+        tools: [{ functionDeclarations: activeTools }]
+      });
 
       const [resA, resB] = await Promise.all([
-        aiInstance.models.generateContent({ model: selectedLevelObj.model, contents, config: configA }),
-        aiInstance.models.generateContent({ model: selectedLevelObj.model, contents, config: configB })
+        modelA.generateContent({ contents }),
+        modelB.generateContent({ contents })
       ]);
 
       setConversations(prev => prev.map(c => c.id === convId ? {
@@ -1145,8 +1571,8 @@ export default function App() {
           ...m,
           status: 'waiting_variant_selection',
           variants: [
-            { id: 'A', text: resA.text || 'No response', tone: 'Concise & Analytical' },
-            { id: 'B', text: resB.text || 'No response', tone: 'Warm & Detailed' }
+            { id: 'A', text: resA.response.text() || 'No response', tone: 'Concise & Analytical' },
+            { id: 'B', text: resB.response.text() || 'No response', tone: 'Warm & Detailed' }
           ]
         } : m)
       } : c));
@@ -1210,7 +1636,7 @@ export default function App() {
       messages: updatedHistory
     } : c));
 
-    await runAI(convId, updatedHistory);
+    await runAI(convId, updatedHistory, true);
   };
 
   const toggleAutoMode = () => {
@@ -1263,7 +1689,7 @@ export default function App() {
       messages: history
     } : c));
 
-    await runAI(activeId, history);
+    await runAI(activeId, history, false);
   };
 
   const [showAttachMenu, setShowAttachMenu] = useState(false);
@@ -1318,6 +1744,15 @@ export default function App() {
 
   const formatTime = (ts: number) => {
     return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const formatDate = (ts: number) => {
+    const d = new Date(ts);
+    const now = new Date();
+    if (d.toDateString() === now.toDateString()) return 'Today';
+    const yesterday = new Date(); yesterday.setDate(now.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
   };
 
   const StatusIcon = ({ status, role }: { status: MessageStatus, role: 'user' | 'model' | 'function' }) => {
@@ -1677,8 +2112,28 @@ export default function App() {
 
         <div className="flex-1 overflow-y-auto px-2 space-y-1 pb-4 custom-scrollbar">
           <div className="px-3 py-2 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Conversations</div>
-          {[...conversations].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)).map((conv) => (
-            <div key={conv.id} className="group relative flex items-center">
+          {(() => {
+            const sorted = [...conversations].sort((a, b) => {
+              if (a.pinned !== b.pinned) return b.pinned ? 1 : -1;
+              return b.updatedAt - a.updatedAt;
+            });
+
+            const groups: { date: string, convs: Conversation[] }[] = [];
+            sorted.forEach(c => {
+              const dateLabel = formatDate(c.updatedAt);
+              const existingGroup = groups.find(g => g.date === dateLabel);
+              if (existingGroup) {
+                existingGroup.convs.push(c);
+              } else {
+                groups.push({ date: dateLabel, convs: [c] });
+              }
+            });
+
+            return groups.map(({ date, convs }) => (
+              <div key={date} className="space-y-1 mt-4">
+                <div className="px-3 py-1.5 text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{date}</div>
+                {convs.map(conv => (
+            <div key={conv.id} className="group relative flex items-center px-1">
               <button 
                 onClick={() => { setActiveId(conv.id); setSidebarOpen(false); }} 
                 className={`w-full text-left px-3 py-3 rounded-xl text-sm truncate transition-all flex items-center gap-3 pr-[120px] ${activeId === conv.id ? 'bg-white/10 text-white shadow-sm border border-white/10' : 'text-zinc-400 hover:bg-white/5 hover:text-zinc-200 border border-transparent active:bg-white/5'}`}
@@ -1686,23 +2141,33 @@ export default function App() {
                 <MessageSquare className={`w-4 h-4 shrink-0 ${activeId === conv.id ? theme.text : 'opacity-70'}`} />
                 <span className="truncate text-[15px] md:text-sm flex-1">{conv.pinned && <Pin className="w-3 h-3 inline mr-1 text-yellow-500" />}{conv.title}</span>
               </button>
-              <div className="absolute right-2 flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity bg-black/60 backdrop-blur-md rounded-lg p-0.5 border border-white/10">
-                <button onClick={(e) => togglePin(conv.id, e)} className="p-1.5 text-zinc-400 hover:text-yellow-400 hover:bg-white/10 rounded-md" title="Pin"><Pin className="w-3.5 h-3.5" /></button>
-                <button onClick={(e) => editTitle(conv.id, e)} className="p-1.5 text-zinc-400 hover:text-blue-400 hover:bg-white/10 rounded-md" title="Edit"><Edit2 className="w-3.5 h-3.5" /></button>
-                <button onClick={(e) => exportConv(conv.id, e)} className="p-1.5 text-zinc-400 hover:text-emerald-400 hover:bg-white/10 rounded-md" title="Export"><Download className="w-3.5 h-3.5" /></button>
-                <button onClick={(e) => deleteConv(conv.id, e)} className="p-1.5 text-zinc-400 hover:text-red-400 hover:bg-white/10 rounded-md" title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
+              <div className="absolute right-3 flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity bg-black/80 backdrop-blur-md rounded-xl p-1 border border-white/10 shadow-2xl z-10">
+                <button onClick={(e) => togglePin(conv.id, e)} className="p-2 text-zinc-400 hover:text-yellow-400 hover:bg-white/10 rounded-lg transition-colors" title="Pin"><Pin className="w-4 h-4" /></button>
+                <button onClick={(e) => editTitle(conv.id, e)} className="p-2 text-zinc-400 hover:text-blue-400 hover:bg-white/10 rounded-lg transition-colors" title="Edit"><Edit2 className="w-4 h-4" /></button>
+                <button onClick={(e) => deleteConv(conv.id, e)} className="p-2 text-zinc-400 hover:text-red-400 hover:bg-white/10 rounded-lg transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>
               </div>
             </div>
           ))}
+              </div>
+            ));
+          })()}
         </div>
 
         <div className="p-4 border-t border-white/10 bg-black/20 shrink-0 pb-safe">
-          <div className="flex items-center justify-between bg-black/40 px-4 py-3 rounded-xl border border-white/5 shadow-inner">
-            <div className="flex items-center gap-2 text-sm text-zinc-400">
-              <Coins className="w-4 h-4 text-emerald-400" />
-              <span>Balance</span>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between bg-black/40 px-4 py-3 rounded-xl border border-white/5 shadow-inner">
+              <div className="flex items-center gap-2 text-sm text-zinc-400">
+                <Coins className="w-4 h-4 text-emerald-400" />
+                <span>Balance</span>
+              </div>
+              <span className="font-mono text-emerald-400 font-medium">${balance.toFixed(4)}</span>
             </div>
-            <span className="font-mono text-emerald-400 font-medium">${balance.toFixed(4)}</span>
+            <button
+              onClick={() => setShowPayment(true)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 rounded-xl text-sm font-medium border border-emerald-600/30 transition-all active:scale-95"
+            >
+              <Plus className="w-4 h-4" /> Add Funds
+            </button>
           </div>
         </div>
       </div>
@@ -1710,21 +2175,29 @@ export default function App() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 relative z-10">
         {/* Header */}
-        <header className={`h-14 border-b flex items-center justify-between px-3 md:px-4 shrink-0 z-20 pt-safe glass-panel transition-colors duration-500 ${theme.border}`}>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setSidebarOpen(true)} className="md:hidden p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors active:bg-white/5">
-              <Menu className="w-6 h-6" />
+        <header className={`h-14 md:h-16 border-b flex items-center justify-between px-2 md:px-4 shrink-0 z-20 pt-safe glass-panel transition-colors duration-500 ${theme.border}`}>
+          <div className="flex items-center gap-1.5 md:gap-2">
+            <button onClick={() => setSidebarOpen(true)} className="md:hidden p-1.5 text-zinc-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors active:scale-95">
+              <Menu className="w-5 h-5" />
             </button>
-            {isDangerous && (
-              <div className="hidden md:flex items-center gap-1.5 px-2 py-1 bg-red-500/20 border border-red-500/30 rounded-md text-red-200 text-xs font-medium animate-pulse">
-                <AlertTriangle className="w-3.5 h-3.5" />
-                High Cost Model Active
+            <div className="flex flex-col">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-bold text-white md:text-base truncate max-w-[120px] md:max-w-[200px]">
+                  {activeConversation?.title || 'Chat'}
+                </h2>
+                {isDangerous && <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" title="High Cost Model" />}
               </div>
-            )}
+              {activeConversation && (
+                <div className="flex items-center gap-2 text-[10px] md:text-xs text-emerald-400/80 font-mono">
+                  <Coins className="w-3 h-3" />
+                  <span>Cost: ${(activeConversation.messages.reduce((acc, m) => acc + (m.cost || 0) + (m.toolResult?.cost || 0), 0)).toFixed(4)}</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Model Selector */}
-          <div className="relative flex items-center gap-4">
+          <div className="relative flex items-center gap-2 md:gap-4">
             {activeId && (
               <div className="flex items-center gap-2">
                 <span className="text-xs font-medium text-zinc-400">Auto Driven</span>
@@ -1831,20 +2304,30 @@ export default function App() {
                   );
                 }
 
+                const isTaskUI = activeConversation?.mode === 'auto' && thinkingEnabled && msg.role === 'model';
+
                 return (
                   <div
                     key={msg.id}
                     className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
                   >
                     <div
-                      className={`max-w-[85%] md:max-w-[75%] px-4 py-3 rounded-2xl backdrop-blur-md border transition-colors duration-500 ${
+                      className={`${isTaskUI ? 'w-full max-w-none' : 'max-w-[85%] md:max-w-[75%]'} px-4 py-3 rounded-2xl backdrop-blur-md border transition-colors duration-500 ${
                         msg.role === 'user'
                           ? `text-white rounded-br-sm ${theme.bg} ${theme.border}`
                           : msg.status === 'error' 
                             ? 'bg-red-950/40 text-red-200 rounded-bl-sm border-red-900/50'
-                            : 'bg-white/5 text-zinc-200 rounded-bl-sm border-white/10'
+                            : isTaskUI
+                              ? 'bg-blue-500/5 border-blue-500/20 text-zinc-200'
+                              : 'bg-white/5 text-zinc-200 rounded-bl-sm border-white/10'
                       }`}
                     >
+                      {isTaskUI && (
+                        <div className="flex items-center gap-2 mb-3 pb-2 border-b border-blue-500/10">
+                          <Activity className="w-4 h-4 text-blue-400" />
+                          <span className="text-xs font-bold uppercase tracking-wider text-blue-400">Task Analysis</span>
+                        </div>
+                      )}
                       {/* Attachments Display */}
                       {msg.attachments && msg.attachments.length > 0 && (
                         <div className="flex flex-wrap gap-2 mb-3">
@@ -1862,7 +2345,7 @@ export default function App() {
                       )}
 
                       {msg.role === 'model' ? (
-                        <div className="markdown-body text-[15px] leading-relaxed break-words">
+                        <div className={`${isTaskUI ? 'space-y-4' : ''} markdown-body text-[15px] leading-relaxed break-words`}>
                           {msg.text ? (
                             <>
                               <Markdown components={{ code: CodeBlock }}>{msg.text}</Markdown>
@@ -1996,8 +2479,8 @@ export default function App() {
               </div>
             )}
 
-            <div className="flex items-end gap-2">
-              <div className={`flex-1 rounded-3xl border transition-colors flex items-end bg-black/40 backdrop-blur-md ${theme.border} ${theme.focus}`}>
+            <div className="flex items-end gap-2 md:gap-3">
+              <div className={`flex-1 rounded-2xl md:rounded-3xl border transition-colors flex items-end bg-black/40 backdrop-blur-md pr-2 ${theme.border} ${theme.focus}`}>
                 <input 
                   type="file" 
                   multiple 
@@ -2008,7 +2491,7 @@ export default function App() {
                 <div className="relative">
                   <button 
                     onClick={() => setShowAttachMenu(!showAttachMenu)}
-                    className="p-3.5 text-zinc-400 hover:text-white transition-colors"
+                    className="p-3 md:p-3.5 text-zinc-400 hover:text-white transition-colors"
                     title="Attach file"
                   >
                     <Paperclip className="w-5 h-5" />
@@ -2047,34 +2530,44 @@ export default function App() {
                     e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
                   }}
                   onKeyDown={handleKeyDown}
-                  placeholder="Message INEX Agent..."
-                  className="w-full bg-transparent pr-4 py-3.5 max-h-[120px] text-[15px] text-zinc-200 placeholder-zinc-500 focus:outline-none resize-none hide-scrollbar"
+                  placeholder="Message..."
+                  className="flex-1 bg-transparent py-3 md:py-3.5 max-h-[120px] text-[15px] text-zinc-200 placeholder-zinc-500 focus:outline-none resize-none hide-scrollbar"
                   rows={1}
                   disabled={isLoading}
                 />
+
+                <div className="flex items-center pb-2 md:pb-2.5 gap-1">
+                  <button
+                    onClick={() => setThinkingEnabled(!thinkingEnabled)}
+                    className={`p-2 rounded-xl transition-all active:scale-95 ${thinkingEnabled ? 'bg-blue-600/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-400'}`}
+                    title="Toggle Thinking Mode"
+                  >
+                    <Brain className={`w-5 h-5 ${thinkingEnabled ? 'animate-pulse' : ''}`} />
+                  </button>
+
+                  {isLoading ? (
+                    <button
+                      onClick={handleStopGeneration}
+                      className="p-2 rounded-xl flex items-center justify-center shrink-0 transition-all active:scale-95 text-white hover:bg-white/10"
+                      title="Stop generating"
+                    >
+                      <Square className="w-5 h-5 fill-current" />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleSend}
+                      disabled={(!input.trim() && attachments.length === 0) || isLoading}
+                      className={`p-2 rounded-xl flex items-center justify-center shrink-0 transition-all active:scale-95 ${
+                        (input.trim() || attachments.length > 0) && !isLoading
+                          ? `text-white ${theme.text}`
+                          : 'text-zinc-600'
+                      }`}
+                    >
+                      <Send className="w-5 h-5" />
+                    </button>
+                  )}
+                </div>
               </div>
-              
-              {isLoading ? (
-                <button
-                  onClick={handleStopGeneration}
-                  className="p-3.5 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 bg-white/10 text-white hover:bg-white/20 border border-white/10 shadow-lg"
-                  title="Stop generating"
-                >
-                  <Square className="w-5 h-5 fill-current" />
-                </button>
-              ) : (
-                <button
-                  onClick={handleSend}
-                  disabled={(!input.trim() && attachments.length === 0) || isLoading}
-                  className={`p-3.5 rounded-full flex items-center justify-center shrink-0 transition-all active:scale-95 ${
-                    (input.trim() || attachments.length > 0) && !isLoading
-                      ? `${theme.blob1} text-white shadow-lg shadow-black/50`
-                      : 'bg-white/5 text-zinc-600 border border-white/10'
-                  }`}
-                >
-                  <Send className="w-5 h-5 ml-0.5" />
-                </button>
-              )}
             </div>
           </div>
         </div>

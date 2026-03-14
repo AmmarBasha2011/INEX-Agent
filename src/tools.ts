@@ -128,3 +128,44 @@ export const listFilesTool: FunctionDeclaration = {
   description: 'List all files and folders in a specific folder (by parentId) or root (empty string) in the File Manager.',
   parameters: { type: Type.OBJECT, properties: { parentId: { type: Type.STRING, description: 'ID of the parent folder, or empty string for root' } } }
 };
+
+export const urlFetchTool: FunctionDeclaration = {
+  name: 'urlFetch',
+  description: 'Fetch the full content of a webpage given its URL.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      url: {
+        type: Type.STRING,
+        description: 'The URL of the webpage to fetch.'
+      }
+    },
+    required: ['url']
+  }
+};
+
+export const copyFileTool: FunctionDeclaration = {
+  name: 'copyFile',
+  description: 'Copy a file or folder to a new location.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      id: { type: Type.STRING, description: 'ID of the file or folder to copy' },
+      parentId: { type: Type.STRING, description: 'ID of the destination folder, or empty string for root' }
+    },
+    required: ['id', 'parentId']
+  }
+};
+
+export const moveFileTool: FunctionDeclaration = {
+  name: 'moveFile',
+  description: 'Move a file or folder to a new location.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      id: { type: Type.STRING, description: 'ID of the file or folder to move' },
+      parentId: { type: Type.STRING, description: 'ID of the destination folder, or empty string for root' }
+    },
+    required: ['id', 'parentId']
+  }
+};
